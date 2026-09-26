@@ -369,11 +369,174 @@ describe("source control panel", function()
     end)
   end)
 
+  describe("sidebar width", function()
+    -- 'winfixwidth' alone does not hold an exact width: Neovim redistributes
+    -- columns on every split and close, and the sidebar drifts or stretches.
+    local function width_of(panel)
+      return vim.api.nvim_win_get_width(panel.winid)
+    end
+
+    it("holds its width across split and close cycles", function()
+      local dir = helper.kitchen_sink()
+      local panel = open_panel(dir)
+      local expected = width_of(panel)
+
+      vim.cmd("vsplit")
+      vim.wait(120)
+      panel:enforce_width()
+      assert.equals(expected, width_of(panel), "width should survive a split")
+
+      vim.cmd("close")
+      vim.wait(120)
+      panel:enforce_width()
+      assert.equals(expected, width_of(panel), "width should survive a close")
+    end)
+
+    it("keeps its width when it would otherwise be the only window", function()
+      local dir = helper.kitchen_sink()
+      local panel = open_panel(dir)
+      local expected = width_of(panel)
+
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if winid ~= panel.winid then
+          vim.api.nvim_set_current_win(winid)
+          vim.cmd("close")
+        end
+      end
+      vim.wait(200)
+      panel:enforce_width()
+      vim.wait(120)
+
+      assert.is_true(#vim.api.nvim_tabpage_list_wins(0) >= 2, "a placeholder window should hold the space")
+      assert.equals(expected, width_of(panel), "the sidebar must not stretch to full width")
+    end)
+
+    it("respects a deliberate resize", function()
+      local dir = helper.kitchen_sink()
+      local panel = open_panel(dir)
+
+      vim.api.nvim_win_set_width(panel.winid, 55)
+      panel:enforce_width() -- same window count: adopt it
+      assert.equals(55, width_of(panel))
+
+      vim.cmd("vsplit")
+      vim.wait(120)
+      panel:enforce_width()
+      assert.equals(55, width_of(panel), "the resized width should be the one defended")
+      vim.cmd("close")
+    end)
+  end)
+
+  describe("closing with q", function()
+    it("gives the borrowed editor window back instead of destroying it", function()
+      local dir = helper.init("borrow")
+      helper.write(dir, "a.lua", "alpha\nbeta\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      helper.write(dir, "a.lua", "ALPHA\nbeta\n")
+
+      local panel = open_panel(dir)
+
+      -- Open the file the way <CR> does, so there is a real editor window.
+      local path_util = require("gitui.utils.path")
+      local editor_win = require("gitui.ui.window").open_file(path_util.join(dir, "a.lua"), {
+        exclude = { panel.winid },
+      })
+      assert.is_not_nil(editor_win)
+      local original_buf = vim.api.nvim_win_get_buf(editor_win)
+      local window_count = #vim.api.nvim_tabpage_list_wins(0)
+
+      -- The diff borrows that window.
+      require("gitui.ui.diff_view").open(vim.deepcopy(store.active().repo), {
+        path = "a.lua",
+        spec = { kind = "worktree" },
+      })
+      local diff_panel = require("gitui.ui.panel").get("diff")
+      t.wait_for(function()
+        return diff_panel:is_open()
+      end, "the diff never opened")
+      assert.equals(editor_win, diff_panel.winid, "the diff should reuse the editor window")
+
+      -- q must hand it back, not close it.
+      diff_panel:focus()
+      vim.cmd("normal q")
+      vim.wait(200)
+
+      assert.is_false(diff_panel:is_open())
+      assert.equals(window_count, #vim.api.nvim_tabpage_list_wins(0), "the window must survive")
+      assert.is_true(vim.api.nvim_win_is_valid(editor_win))
+      assert.equals(original_buf, vim.api.nvim_win_get_buf(editor_win), "the original buffer must return")
+    end)
+
+    it("closes the sidebar", function()
+      local dir = helper.simple()
+      local panel = open_panel(dir)
+      panel:focus()
+      vim.cmd("normal q")
+      vim.wait(120)
+      assert.is_false(panel:is_open())
+    end)
+  end)
+
+  describe("global keymaps", function()
+    local config = require("gitui.config")
+
+    it("expands <prefix> into every global mapping", function()
+      t.with_config({ default_keymaps = false, log_level = "off" }, function(merged)
+        assert.equals("<leader>guu", merged.global_keymaps.source_control)
+        assert.equals("<leader>gud", merged.global_keymaps.diff)
+        assert.equals("<leader>gu<space>", merged.global_keymaps.palette)
+        -- Motions are not prefixed.
+        assert.equals("]c", merged.global_keymaps.next_hunk)
+      end)
+    end)
+
+    it("moves the whole set when the prefix changes", function()
+      t.with_config({ prefix = "<leader>gui", default_keymaps = false, log_level = "off" }, function(merged)
+        assert.equals("<leader>guiu", merged.global_keymaps.source_control)
+        assert.equals("<leader>guid", merged.global_keymaps.diff)
+      end)
+    end)
+
+    it("lets an individual mapping be overridden or disabled", function()
+      t.with_config({
+        global_keymaps = { source_control = "<leader>x", diff = false },
+        default_keymaps = false,
+        log_level = "off",
+      }, function(merged)
+        assert.equals("<leader>x", merged.global_keymaps.source_control)
+        assert.is_false(merged.global_keymaps.diff)
+      end)
+    end)
+
+    it("stays clear of the <leader>g namespace by default", function()
+      t.with_config({ default_keymaps = false, log_level = "off" }, function(merged)
+        for action, lhs in pairs(merged.global_keymaps) do
+          if type(lhs) == "string" and lhs:match("^<leader>g") then
+            assert.is_not_nil(
+              lhs:match("^<leader>gu"),
+              ("%s uses %s, which collides with the common <leader>g space"):format(action, lhs)
+            )
+          end
+        end
+      end)
+    end)
+
+    it("repairs an invalid last_window value", function()
+      t.with_config({ last_window = "nonsense", default_keymaps = false, log_level = "off" }, function(merged)
+        assert.equals("keep_width", merged.last_window)
+      end)
+    end)
+  end)
+
   it("survives having no repository", function()
     store.reset()
     repository.invalidate()
     local outside = helper.tmpdir("not-a-repo")
     vim.cmd("noautocmd cd " .. vim.fn.fnameescape(outside))
+    -- Repository detection consults the current buffer first, so a file left
+    -- open by an earlier test would still resolve to its repository.
+    vim.cmd("noautocmd enew")
 
     source_control.open({ focus = true })
     local panel = assert(source_control.panel())

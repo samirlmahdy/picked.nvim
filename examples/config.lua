@@ -11,6 +11,13 @@ require("gitui").setup({
   width = 42,
   compact_width = 34, -- below this, the panel drops decorations
 
+  -- What the sidebar does when it would be the only window left, which
+  -- happens the moment you close the last file.
+  --   "keep_width"  hold the width by parking an empty window beside it
+  --   "expand"      let Neovim stretch it across the screen
+  --   "close"       close the panel too
+  last_window = "keep_width",
+
   --- Behaviour ---------------------------------------------------------------
 
   auto_refresh = true,
@@ -143,28 +150,36 @@ require("gitui").setup({
 
   default_keymaps = true,
 
-  global_keymaps = {
-    source_control = "<leader>gs",
-    diff = "<leader>gd",
-    branches = "<leader>gb",
-    log = "<leader>gl",
-    file_history = "<leader>gh",
-    commit = "<leader>gc",
-    push = "<leader>gp",
-    pull = "<leader>gP",
-    fetch = "<leader>gf",
-    stash = "<leader>gS",
-    blame = "<leader>gB",
-    palette = "<leader>g<space>",
+  -- Every global mapping hangs off this. gitui stays out of `<leader>g`
+  -- because LazyVim and friends already own most of it; change this one line
+  -- to move the whole set, e.g. prefix = "<leader>gui".
+  prefix = "<leader>gu",
 
-    -- Hunk actions in ordinary file buffers.
+  global_keymaps = {
+    -- `<prefix>` expands to the option above. An absolute value ignores it,
+    -- and `false` skips the mapping entirely.
+    source_control = "<prefix>u",
+    diff = "<prefix>d",
+    branches = "<prefix>b",
+    log = "<prefix>l",
+    file_history = "<prefix>h",
+    commit = "<prefix>c",
+    push = "<prefix>p",
+    pull = "<prefix>P",
+    fetch = "<prefix>f",
+    stash = "<prefix>s",
+    blame = "<prefix>B",
+    palette = "<prefix><space>",
+
+    -- Hunk actions in ordinary file buffers. `]c`/`[c` defer to Neovim's own
+    -- diff-mode motions whenever the window is in diff mode.
     next_hunk = "]c",
     prev_hunk = "[c",
-    stage_hunk = "<leader>hs",
-    unstage_hunk = "<leader>hu",
-    discard_hunk = "<leader>hr",
-    preview_hunk = "<leader>hp",
-    blame_line = "<leader>hb",
+    stage_hunk = "<prefix>S",
+    unstage_hunk = "<prefix>U",
+    discard_hunk = "<prefix>X",
+    preview_hunk = "<prefix>v",
+    blame_line = "<prefix>L",
   },
 
   -- Per-view mappings. A value may be a string, a list of strings, or `false`

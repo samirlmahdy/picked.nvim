@@ -77,9 +77,9 @@ communicates state with colour alone.
   "samirlmahdy/gitui.nvim",
   cmd = { "GitUI", "GitUIOpen", "GitUIToggle", "GitUILog", "GitUIBranch", "GitUIBlame" },
   keys = {
-    { "<leader>gs", "<cmd>GitUIToggle<cr>", desc = "Source Control" },
-    { "<leader>gc", "<cmd>GitUICommit<cr>", desc = "Commit" },
-    { "<leader>gl", "<cmd>GitUILog<cr>", desc = "Commit history" },
+    { "<leader>guu", "<cmd>GitUIToggle<cr>", desc = "Source Control" },
+    { "<leader>guc", "<cmd>GitUICommit<cr>", desc = "Commit" },
+    { "<leader>gul", "<cmd>GitUILog<cr>", desc = "Commit history" },
   },
   opts = {},
 }
@@ -130,30 +130,39 @@ If you would rather browse the list without diffs opening, set
 
 ### Global
 
+Everything lives under one prefix, `<leader>gu` by default. gitui deliberately
+does **not** squat on `<leader>g`: distributions like LazyVim already own most
+of it, and a silently skipped mapping is worse than an unfamiliar one. One line
+moves the whole set:
+
+```lua
+require("gitui").setup({ prefix = "<leader>gui" })
+```
+
 | Key | Action |
 | --- | --- |
-| `<leader>gs` | Toggle the Source Control panel |
-| `<leader>gd` | Diff the current file |
-| `<leader>gb` | Branches |
-| `<leader>gl` | Commit history |
-| `<leader>gh` | History of the current file |
-| `<leader>gc` | Commit |
-| `<leader>gp` / `<leader>gP` | Push / Pull |
-| `<leader>gf` | Fetch |
-| `<leader>gS` | Stashes |
-| `<leader>gB` | Blame the current file |
-| `<leader>g<space>` | Command palette |
+| `<leader>guu` | Toggle the Source Control panel |
+| `<leader>gud` | Diff the current file |
+| `<leader>gub` | Branches |
+| `<leader>gul` | Commit history |
+| `<leader>guh` | History of the current file |
+| `<leader>guc` | Commit |
+| `<leader>gup` / `<leader>guP` | Push / Pull |
+| `<leader>guf` | Fetch |
+| `<leader>gus` | Stashes |
+| `<leader>guB` | Blame the current file |
+| `<leader>gu<space>` | Command palette |
 
 ### In any file buffer
 
 | Key | Action |
 | --- | --- |
-| `]c` / `[c` | Next / previous hunk |
-| `<leader>hs` | Stage the hunk (or, in visual mode, the selected lines) |
-| `<leader>hu` | Unstage the hunk |
-| `<leader>hr` | Discard the hunk (or the selected lines) |
-| `<leader>hp` | Preview the hunk |
-| `<leader>hb` | Blame the current line |
+| `]c` / `[c` | Next / previous hunk — falls through to Neovim's own diff motions inside a diff |
+| `<leader>guS` | Stage the hunk (or, in visual mode, the selected lines) |
+| `<leader>guU` | Unstage the hunk |
+| `<leader>guX` | Discard the hunk (or the selected lines) |
+| `<leader>guv` | Preview the hunk |
+| `<leader>guL` | Blame the current line |
 
 ### Source Control panel
 
@@ -173,6 +182,10 @@ If you would rather browse the list without diffs opening, set
 | `]f` / `[f` | Next / previous file |
 | `m` | Contextual menu |
 | `r` / `?` / `q` | Refresh / help / close |
+
+`q` closes whichever gitui pane you are in, including the sidebar. Dismissing a
+diff hands your editor window back with the buffer that was in it — gitui
+borrows the window, it does not take it.
 
 Visual mode works in the panel: select several rows and press `s`, `u` or `x`.
 
@@ -236,6 +249,14 @@ require("gitui").setup({
   position = "left",          -- "left" | "right" | "float"
   width = 42,
   compact_width = 34,         -- below this, the panel drops decorations
+
+  -- What the sidebar does when it would be the only window left:
+  --   "keep_width"  hold its width, parking an empty window beside it
+  --   "expand"      let Neovim stretch it (its default behaviour)
+  --   "close"       close the panel too
+  last_window = "keep_width",
+
+  prefix = "<leader>gu",      -- every global mapping lives under this
 
   auto_refresh = true,
   refresh_debounce = 250,
@@ -321,7 +342,7 @@ require("gitui").setup({
   },
 
   default_keymaps = true,
-  global_keymaps = { --[[ see :help gitui-keymaps ]] },
+  global_keymaps = { --[[ `<prefix>` expands to `prefix`; see :help gitui-keymaps ]] },
   keymaps = { --[[ per-view; see :help gitui-keymaps ]] },
 })
 ```
@@ -452,7 +473,8 @@ cancel; `<CR>` never confirms a destructive action.
 | --- | --- |
 | Boxes instead of icons | Set `icons = false`, or `vim.g.have_nerd_font = false` |
 | "Authentication required" on push | Terminal prompts are disabled inside Neovim by design. Use a credential helper, an SSH agent, or an SSH remote. |
-| A default mapping does nothing | Something else already owns that key; gitui never overwrites. `:checkhealth gitui` lists the skips. |
+| A default mapping does nothing | Something else already owns that key; gitui never overwrites. `:checkhealth gitui` lists the skips — change `prefix` to move the whole set. |
+| The sidebar goes full width | It was briefly the only window. `last_window = "keep_width"` (the default) parks an empty window beside it; `"close"` closes the panel instead. |
 | `<C-s>` does not commit | Your terminal is eating it for flow control. Use `:w`. |
 | Panel is empty | The buffer may be outside the repository. `:GitUIRefresh` |
 | Slow on a huge repository | Raise `refresh_debounce`, or set `auto_refresh = false` |

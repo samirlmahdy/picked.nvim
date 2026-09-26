@@ -45,6 +45,19 @@ local defaults = {
   --- Minimum width below which the panel renders in "compact" mode.
   compact_width = 34,
 
+  --- What the sidebar does when it would be the only window left, which
+  --- happens as soon as you close the last file.
+  ---
+  ---   "keep_width"  hold the configured width by leaving an empty window
+  ---                 beside it, so the panel never jumps to full screen.
+  ---   "expand"      let Neovim stretch it across the screen, its default.
+  ---   "close"       close the panel too.
+  ---
+  --- Under "keep_width", closing the empty window yourself is respected: the
+  --- panel expands rather than conjuring another one, so `:q` still works.
+  ---@type "keep_width"|"expand"|"close"
+  last_window = "keep_width",
+
   --- Automatically refresh repository state on relevant events.
   auto_refresh = true,
 
@@ -243,33 +256,48 @@ local defaults = {
     which_key = "auto",
   },
 
-  --- Install the default <leader>g mappings. Existing user mappings are never
-  --- overwritten.
+  --- Install the default mappings. Existing user mappings are never
+  --- overwritten, so anything already taken is simply skipped
+  --- (`:checkhealth gitui` lists what was skipped).
   default_keymaps = true,
 
+  --- Prefix every global mapping shares.
+  ---
+  --- gitui deliberately does *not* squat on `<leader>g`: distributions such as
+  --- LazyVim already own most of it, and a silently skipped mapping is worse
+  --- than an unfamiliar one. Everything lives under one prefix instead, so a
+  --- single line moves the whole set:
+  ---
+  ---   require("gitui").setup({ prefix = "<leader>gui" })
+  prefix = "<leader>gu",
+
   --- Global mappings, installed when `default_keymaps` is true.
-  --- Set any entry to `false` to skip it.
+  ---
+  --- `<prefix>` expands to the `prefix` option above. A value without the
+  --- token is used verbatim, and `false` skips the mapping entirely.
   global_keymaps = {
-    source_control = "<leader>gs",
-    diff = "<leader>gd",
-    branches = "<leader>gb",
-    log = "<leader>gl",
-    file_history = "<leader>gh",
-    commit = "<leader>gc",
-    push = "<leader>gp",
-    pull = "<leader>gP",
-    fetch = "<leader>gf",
-    stash = "<leader>gS",
-    blame = "<leader>gB",
-    palette = "<leader>g<space>",
-    -- Hunk actions available in ordinary buffers.
+    source_control = "<prefix>u",
+    diff = "<prefix>d",
+    branches = "<prefix>b",
+    log = "<prefix>l",
+    file_history = "<prefix>h",
+    commit = "<prefix>c",
+    push = "<prefix>p",
+    pull = "<prefix>P",
+    fetch = "<prefix>f",
+    stash = "<prefix>s",
+    blame = "<prefix>B",
+    palette = "<prefix><space>",
+
+    -- Hunk actions in ordinary file buffers. `]c`/`[c` fall through to
+    -- Neovim's own diff-mode motions whenever the window is in diff mode.
     next_hunk = "]c",
     prev_hunk = "[c",
-    stage_hunk = "<leader>hs",
-    unstage_hunk = "<leader>hu",
-    discard_hunk = "<leader>hr",
-    preview_hunk = "<leader>hp",
-    blame_line = "<leader>hb",
+    stage_hunk = "<prefix>S",
+    unstage_hunk = "<prefix>U",
+    discard_hunk = "<prefix>X",
+    preview_hunk = "<prefix>v",
+    blame_line = "<prefix>L",
   },
 
   --- Per-view buffer-local mappings. Each value may be a string, a list of
@@ -497,6 +525,12 @@ local function validate(opts)
     opts.icons = defaults.icons
   end
 
+  local valid_last_window = { keep_width = true, expand = true, close = true }
+  if not valid_last_window[opts.last_window] then
+    bad("last_window", opts.last_window, "'keep_width', 'expand' or 'close'")
+    opts.last_window = defaults.last_window
+  end
+
   if opts.diff.view ~= "unified" and opts.diff.view ~= "split" then
     bad("diff.view", opts.diff.view, "'unified' or 'split'")
     opts.diff.view = defaults.diff.view
@@ -545,6 +579,21 @@ function M.setup(user)
   end
   if user and user.browse and user.browse.opener then
     merged.browse.opener = user.browse.opener
+  end
+
+  -- Expand `<prefix>` before anything reads a mapping, so consumers only ever
+  -- see final left-hand sides.
+  --
+  -- The replacement is escaped and parenthesised deliberately: `%` is special
+  -- on the right-hand side of gsub, and an unparenthesised inner gsub would
+  -- pass its match count as this gsub's `n` argument — which silently means
+  -- "replace nothing".
+  local prefix = merged.prefix or ""
+  local escaped = (prefix:gsub("%%", "%%%%"))
+  for action, lhs in pairs(merged.global_keymaps) do
+    if type(lhs) == "string" then
+      merged.global_keymaps[action] = (lhs:gsub("^<prefix>", escaped))
+    end
   end
 
   local problems = validate(merged)

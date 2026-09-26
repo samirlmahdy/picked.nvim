@@ -168,15 +168,22 @@ function Panel:open(opts)
     local target = window.pick_editor_window()
     if target then
       self.winid = target
+      -- Borrowing someone's window means giving it back. Closing this panel
+      -- must restore whatever was here, not destroy the window — that would
+      -- leave the sidebar as the only window and stretched to full width.
+      self.data.borrowed_buf = vim.api.nvim_win_get_buf(target)
+      self.data.created_window = false
       vim.api.nvim_win_set_buf(target, bufnr)
     else
-      vim.cmd("noautocmd vsplit")
-      self.winid = vim.api.nvim_get_current_win()
-      vim.api.nvim_win_set_buf(self.winid, bufnr)
+      self.winid = window.open_beside_sidebar(bufnr)
+      self.data.borrowed_buf = nil
+      self.data.created_window = true
     end
     window.configure_window(self.winid, { winfixwidth = false, number = false })
   else
     self.winid = window.open_sidebar(bufnr, { position = opts.position })
+    self.data.width = self.data.width or window.sidebar_width()
+    self.data.win_count = #vim.api.nvim_tabpage_list_wins(0)
   end
 
   self:redraw()
@@ -218,7 +225,31 @@ function Panel:close()
     end
   end
 
-  window.close(winid)
+  -- A borrowed window is handed back with its original buffer rather than
+  -- closed: the user asked to dismiss a diff, not to lose the window they
+  -- were editing in. Closing it would also leave the sidebar as the only
+  -- window, stretched across the whole screen.
+  local borrowed = self.data.borrowed_buf
+  self.data.borrowed_buf = nil
+
+  local returned = false
+  if
+    borrowed
+    and not self.data.created_window
+    and vim.api.nvim_win_is_valid(winid)
+    and vim.api.nvim_buf_is_valid(borrowed)
+  then
+    returned = pcall(vim.api.nvim_win_set_buf, winid, borrowed)
+    if returned then
+      window.restore_window(winid)
+    end
+  end
+
+  if not returned then
+    -- Either we created the window, or the buffer that was here has been
+    -- wiped while the diff was open.
+    window.close(winid)
+  end
 
   if self.spec.on_close then
     self.spec.on_close(self)
@@ -305,6 +336,98 @@ function Panel:redraw()
     target = target or (cursor and cursor[1]) or 1
     self:set_cursor(target)
   end
+end
+
+---Decide what to do when the sidebar is the only window on screen.
+---
+---Neovim has to give every column to something, so a lone sidebar is always
+---full width. `last_window` chooses whether to accept that, park an empty
+---window beside it, or close the panel.
+function Panel:handle_last_window()
+  local mode = config.options.last_window
+
+  if mode == "close" then
+    return vim.schedule(function()
+      if self:is_open() and #vim.api.nvim_tabpage_list_wins(0) <= 1 then
+        self:close()
+      end
+    end)
+  end
+
+  if mode ~= "keep_width" or self.data.suppress_placeholder then
+    return
+  end
+
+  -- Never fight a quit: during exit there is nothing to preserve, and
+  -- conjuring a window would stop `:q` from finishing.
+  if vim.v.exiting ~= vim.NIL or self.data.placing then
+    return
+  end
+
+  self.data.placing = true
+  local previous = vim.api.nvim_get_current_win()
+
+  local ok = pcall(function()
+    -- A listed, ordinary empty buffer: the user can `:edit` straight into it.
+    local empty = vim.api.nvim_create_buf(true, false)
+    local modifier = config.options.position == "right" and "topleft" or "botright"
+    vim.cmd(("noautocmd %s vertical split"):format(modifier))
+    local placeholder = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(placeholder, empty)
+    self.data.placeholder_win = placeholder
+  end)
+
+  if ok and vim.api.nvim_win_is_valid(previous) then
+    vim.api.nvim_set_current_win(previous)
+  end
+  self.data.placing = false
+
+  if ok then
+    pcall(vim.api.nvim_win_set_width, self.winid, self.data.width)
+    self.data.win_count = #vim.api.nvim_tabpage_list_wins(0)
+  end
+end
+
+---Hold the sidebar at its configured width.
+---
+---Neovim redistributes space whenever a window opens or closes, and
+---'winfixwidth' only limits that — it does not pin an exact value, so the
+---sidebar drifts a column at a time and stretches to fill the screen whenever
+---it is briefly the only window.
+---
+---A width change that happens *without* the window count changing is the user
+---resizing deliberately, and is adopted rather than undone.
+function Panel:enforce_width()
+  if self.spec.layout ~= "sidebar" or not self:is_open() then
+    return
+  end
+
+  local wins = #vim.api.nvim_tabpage_list_wins(0)
+  local ok, actual = pcall(vim.api.nvim_win_get_width, self.winid)
+  if not ok then
+    return
+  end
+
+  self.data.width = self.data.width or window.sidebar_width()
+
+  if wins <= 1 then
+    -- Alone on screen there is nothing to take space from; do not record this
+    -- width as the user's preference.
+    self.data.win_count = wins
+    self:handle_last_window()
+    return
+  end
+
+  -- Another window exists again, so a placeholder is welcome next time.
+  self.data.suppress_placeholder = false
+
+  if wins == self.data.win_count and actual ~= self.data.width then
+    self.data.width = actual -- a deliberate resize
+  elseif actual ~= self.data.width then
+    pcall(vim.api.nvim_win_set_width, self.winid, self.data.width)
+  end
+
+  self.data.win_count = wins
 end
 
 ---Move the cursor to a line, clamped to the buffer.
@@ -505,6 +628,12 @@ function Panel:install_autocmds()
           self.spec.on_close(self)
         end
       end
+      -- Closing the placeholder is the user saying they want the space back.
+      -- Recreating it would make `:q` appear to do nothing.
+      if closed and closed == self.data.placeholder_win then
+        self.data.placeholder_win = nil
+        self.data.suppress_placeholder = true
+      end
     end,
   })
 
@@ -528,6 +657,20 @@ function Panel:install_autocmds()
       end
     end,
   })
+
+  -- 'winfixwidth' is not enough on its own: closing the last other window
+  -- stretches the sidebar across the screen, and the next split gives it back
+  -- a column short. Re-assert the width whenever the layout changes.
+  if self.spec.layout == "sidebar" then
+    vim.api.nvim_create_autocmd({ "WinClosed", "WinNew", "WinResized", "VimResized", "TabEnter" }, {
+      group = self.augroup,
+      callback = function()
+        vim.schedule(function()
+          self:enforce_width()
+        end)
+      end,
+    })
+  end
 
   if self.spec.on_cursor then
     local debounce = require("gitui.utils.debounce")

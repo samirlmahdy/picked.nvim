@@ -97,6 +97,49 @@ function M.open_sidebar(bufnr, opts)
   return winid
 end
 
+---Open a new window for editor content without ever splitting the sidebar.
+---
+---Splitting the sidebar would halve it and leave two narrow panels; the new
+---window goes against the opposite edge instead, so the sidebar keeps its
+---place and its width.
+---@param bufnr integer
+---@return integer winid
+function M.open_beside_sidebar(bufnr)
+  local modifier = config.options.position == "right" and "topleft" or "botright"
+  vim.cmd(("noautocmd %s vertical split"):format(modifier))
+  local winid = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(winid, bufnr)
+  return winid
+end
+
+---Undo the panel styling on a window that is being handed back to the user.
+---@param winid integer
+function M.restore_window(winid)
+  if not vim.api.nvim_win_is_valid(winid) then
+    return
+  end
+  for _, name in ipairs({ "winhighlight", "winbar", "statuscolumn", "colorcolumn" }) do
+    pcall(function()
+      vim.wo[winid][name] = ""
+    end)
+  end
+  for name, value in pairs({
+    number = vim.o.number,
+    relativenumber = vim.o.relativenumber,
+    cursorline = vim.o.cursorline,
+    wrap = vim.o.wrap,
+    list = vim.o.list,
+    spell = vim.o.spell,
+    signcolumn = vim.o.signcolumn,
+    foldcolumn = vim.o.foldcolumn,
+    winfixwidth = false,
+  }) do
+    pcall(function()
+      vim.wo[winid][name] = value
+    end)
+  end
+end
+
 ---Compute a centred floating-window geometry.
 ---@param opts { width: number|nil, height: number|nil, min_width: integer|nil, min_height: integer|nil }|nil
 ---@return { width: integer, height: integer, row: integer, col: integer }
@@ -305,9 +348,9 @@ function M.open_file(path, opts)
   local winid = M.pick_editor_window(opts.exclude)
 
   if not winid then
-    -- Every window is a panel: make room rather than replacing one.
-    vim.cmd("noautocmd vsplit")
-    winid = vim.api.nvim_get_current_win()
+    -- Every window is a panel: make room beside the sidebar rather than
+    -- splitting it in half.
+    winid = M.open_beside_sidebar(vim.api.nvim_get_current_buf())
     command = "edit"
   end
 

@@ -120,9 +120,26 @@ local function install_default_keymaps()
   safe_map("n", keys.palette, M.palette, "Command palette")
 
   -- Hunk actions inside ordinary file buffers.
+  --
+  -- `]c`/`[c` are Neovim's own diff-mode motions. Mapping them globally would
+  -- shadow the builtin *inside* a diff — including gitui's own side-by-side
+  -- view — so in a diff window the builtin is invoked instead.
   local signs = require("gitui.ui.signs")
-  safe_map("n", keys.next_hunk, signs.next_hunk, "Next hunk")
-  safe_map("n", keys.prev_hunk, signs.prev_hunk, "Previous hunk")
+
+  ---@param builtin string
+  ---@param fallback fun()
+  ---@return fun()
+  local function diff_aware(builtin, fallback)
+    return function()
+      if vim.wo.diff then
+        return vim.cmd("normal! " .. builtin)
+      end
+      fallback()
+    end
+  end
+
+  safe_map("n", keys.next_hunk, diff_aware("]c", signs.next_hunk), "Next hunk")
+  safe_map("n", keys.prev_hunk, diff_aware("[c", signs.prev_hunk), "Previous hunk")
   safe_map("n", keys.preview_hunk, signs.preview_hunk, "Preview hunk")
   safe_map("n", keys.blame_line, function()
     require("gitui.ui.blame").line()
