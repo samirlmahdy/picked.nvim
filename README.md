@@ -1,8 +1,14 @@
-# gitui.nvim
+# picked.nvim
+
+**Pick exactly what goes into your next commit.**
 
 A complete Git workflow environment for Neovim, modelled on the VS Code Source
 Control experience but built entirely from Neovim primitives — buffers,
 windows, extmarks, signs, keymaps and async jobs.
+
+The name is the thesis: staging is an act of selection. picked stages by file,
+by hunk, or by individual line, and the patch it hands to `git apply` is exactly
+the one you chose.
 
 The goal is narrow and concrete:
 
@@ -62,7 +68,7 @@ with destructive operations by default.
 - Neovim **0.10+** (uses `vim.system`, `vim.uv`, extmark signs)
 - git **2.20+** (2.23+ recommended, for `git switch`/`restore`)
 
-Nerd fonts are optional. gitui probes for glyph support and falls back to ASCII
+Nerd fonts are optional. picked probes for glyph support and falls back to ASCII
 automatically; the UI is designed to be readable either way, and never
 communicates state with colour alone.
 
@@ -74,12 +80,12 @@ communicates state with colour alone.
 
 ```lua
 {
-  "samirlmahdy/gitui.nvim",
-  cmd = { "GitUI", "GitUIOpen", "GitUIToggle", "GitUILog", "GitUIBranch", "GitUIBlame" },
+  "samirlmahdy/picked.nvim",
+  cmd = { "Picked", "PickedOpen", "PickedToggle", "PickedLog", "PickedBranch", "PickedBlame" },
   keys = {
-    { "<leader>guu", "<cmd>GitUIToggle<cr>", desc = "Source Control" },
-    { "<leader>guc", "<cmd>GitUICommit<cr>", desc = "Commit" },
-    { "<leader>gul", "<cmd>GitUILog<cr>", desc = "Commit history" },
+    { "<leader>guu", "<cmd>PickedToggle<cr>", desc = "Source Control" },
+    { "<leader>guc", "<cmd>PickedCommit<cr>", desc = "Commit" },
+    { "<leader>gul", "<cmd>PickedLog<cr>", desc = "Commit history" },
   },
   opts = {},
 }
@@ -89,9 +95,9 @@ communicates state with colour alone.
 
 ```lua
 use({
-  "samirlmahdy/gitui.nvim",
+  "samirlmahdy/picked.nvim",
   config = function()
-    require("gitui").setup({})
+    require("picked").setup({})
   end,
 })
 ```
@@ -99,8 +105,8 @@ use({
 ### vim-plug
 
 ```vim
-Plug 'samirlmahdy/gitui.nvim'
-lua require('gitui').setup({})
+Plug 'samirlmahdy/picked.nvim'
+lua require('picked').setup({})
 ```
 
 `setup()` is optional — the commands self-initialise — but calling it is how you
@@ -130,13 +136,13 @@ If you would rather browse the list without diffs opening, set
 
 ### Global
 
-Everything lives under one prefix, `<leader>gu` by default. gitui deliberately
+Everything lives under one prefix, `<leader>gu` by default. picked deliberately
 does **not** squat on `<leader>g`: distributions like LazyVim already own most
 of it, and a silently skipped mapping is worse than an unfamiliar one. One line
 moves the whole set:
 
 ```lua
-require("gitui").setup({ prefix = "<leader>gui" })
+require("picked").setup({ prefix = "<leader>gui" })
 ```
 
 | Key | Action |
@@ -183,13 +189,13 @@ require("gitui").setup({ prefix = "<leader>gui" })
 | `m` | Contextual menu |
 | `r` / `?` / `q` | Refresh / help / close |
 
-`q` closes whichever gitui pane you are in, including the sidebar. Dismissing a
-diff hands your editor window back with the buffer that was in it — gitui
+`q` closes whichever picked pane you are in, including the sidebar. Dismissing a
+diff hands your editor window back with the buffer that was in it — picked
 borrows the window, it does not take it.
 
 Floating views get out of the way on their own. Opening a diff, a file or a
 commit from the history dismisses the float that launched it, so the thing you
-asked for is never hidden underneath it, and only one gitui float is ever on
+asked for is never hidden underneath it, and only one picked float is ever on
 screen at a time.
 
 Visual mode works in the panel: select several rows and press `s`, `u` or `x`.
@@ -207,8 +213,8 @@ Visual mode works in the panel: select several rows and press `s`, `u` or `x`.
 | `<CR>` | Open the real file at this line |
 
 In the side-by-side view `]c` / `[c` are Neovim's own diff motions, so folding
-and `do` / `dp` work too. gitui installs no mappings on your real file buffer
-there — `:GitUIDiffView` returns to the unified patch from either pane.
+and `do` / `dp` work too. picked installs no mappings on your real file buffer
+there — `:PickedDiffView` returns to the unified patch from either pane.
 
 ### Conflicts
 
@@ -225,23 +231,23 @@ there — `:GitUIDiffView` returns to the unified patch from either pane.
 
 | Command | Description |
 | --- | --- |
-| `:GitUI`, `:GitUIToggle` | Toggle the Source Control panel |
-| `:GitUIOpen`, `:GitUIFocus`, `:GitUIClose` | Open / focus / close |
-| `:GitUIRefresh[!]` | Re-read state (`!` refreshes every repository) |
-| `:GitUIDiff [all\|staged][!]` | Diff (`!` uses the side-by-side view) |
-| `:GitUIDiffView` | Toggle unified ↔ side-by-side |
-| `:GitUICommit[!] [message]` | Commit (`!` amends) |
-| `:GitUIPush[!]` | Push (`!` force-pushes with lease) |
-| `:GitUIPull`, `:GitUIFetch[!]` | Pull / fetch (`!` fetches all remotes) |
-| `:GitUILog[!]`, `:GitUIBranch`, `:GitUIStash` | History / branches / stashes |
-| `:GitUIBlame`, `:GitUIBlameLine` | Blame the file / toggle line blame |
-| `:[range]GitUIHistory` | File history, or line history for a range |
-| `:GitUIStage`, `:GitUIUnstage` | Stage / unstage paths |
-| `:[range]GitUIStageHunk`, `:GitUIUnstageHunk`, `:[range]GitUIDiscardHunk` | Hunk actions |
-| `:GitUINextHunk`, `:GitUIPrevHunk`, `:GitUIPreviewHunk` | Hunk navigation |
-| `:GitUIConflict[!]` | Next conflict (`!` opens the three-way view) |
-| `:GitUIPalette`, `:GitUIRepositories` | Palette / repository picker |
-| `:GitUIOutput`, `:GitUIDebugLog`, `:GitUIHealth` | Diagnostics |
+| `:Picked`, `:PickedToggle` | Toggle the Source Control panel |
+| `:PickedOpen`, `:PickedFocus`, `:PickedClose` | Open / focus / close |
+| `:PickedRefresh[!]` | Re-read state (`!` refreshes every repository) |
+| `:PickedDiff [all\|staged][!]` | Diff (`!` uses the side-by-side view) |
+| `:PickedDiffView` | Toggle unified ↔ side-by-side |
+| `:PickedCommit[!] [message]` | Commit (`!` amends) |
+| `:PickedPush[!]` | Push (`!` force-pushes with lease) |
+| `:PickedPull`, `:PickedFetch[!]` | Pull / fetch (`!` fetches all remotes) |
+| `:PickedLog[!]`, `:PickedBranch`, `:PickedStash` | History / branches / stashes |
+| `:PickedBlame`, `:PickedBlameLine` | Blame the file / toggle line blame |
+| `:[range]PickedHistory` | File history, or line history for a range |
+| `:PickedStage`, `:PickedUnstage` | Stage / unstage paths |
+| `:[range]PickedStageHunk`, `:PickedUnstageHunk`, `:[range]PickedDiscardHunk` | Hunk actions |
+| `:PickedNextHunk`, `:PickedPrevHunk`, `:PickedPreviewHunk` | Hunk navigation |
+| `:PickedConflict[!]` | Next conflict (`!` opens the three-way view) |
+| `:PickedPalette`, `:PickedRepositories` | Palette / repository picker |
+| `:PickedOutput`, `:PickedDebugLog`, `:PickedHealth` | Diagnostics |
 
 ---
 
@@ -250,7 +256,7 @@ there — `:GitUIDiffView` returns to the unified patch from either pane.
 Every value below is a default; pass only what you want to change.
 
 ```lua
-require("gitui").setup({
+require("picked").setup({
   position = "left",          -- "left" | "right" | "float"
   width = 42,
   compact_width = 34,         -- below this, the panel drops decorations
@@ -347,8 +353,8 @@ require("gitui").setup({
   },
 
   default_keymaps = true,
-  global_keymaps = { --[[ `<prefix>` expands to `prefix`; see :help gitui-keymaps ]] },
-  keymaps = { --[[ per-view; see :help gitui-keymaps ]] },
+  global_keymaps = { --[[ `<prefix>` expands to `prefix`; see :help picked-keymaps ]] },
+  keymaps = { --[[ per-view; see :help picked-keymaps ]] },
 })
 ```
 
@@ -358,7 +364,7 @@ Per-view mappings live under `keymaps.<view>`. A value may be a string, a list
 of strings, or `false` to disable the action.
 
 ```lua
-require("gitui").setup({
+require("picked").setup({
   keymaps = {
     source_control = {
       stage = "<Space>",
@@ -370,8 +376,8 @@ require("gitui").setup({
 })
 ```
 
-gitui **never overwrites a mapping you already have.** A default global mapping
-whose key is taken is silently skipped; `:checkhealth gitui` lists them.
+picked **never overwrites a mapping you already have.** A default global mapping
+whose key is taken is silently skipped; `:checkhealth picked` lists them.
 
 ---
 
@@ -383,12 +389,12 @@ All optional, all detected at runtime.
 
 ```lua
 -- lualine
-sections = { lualine_b = { require("gitui.integrations").lualine() } }
+sections = { lualine_b = { require("picked.integrations").lualine() } }
 
 -- anything else
-require("gitui").statusline()      -- " feature/cart ↑2 ~3 +1"
-require("gitui").get_status()      -- structured table
-require("gitui").buffer_status()   -- { added, changed, removed } for a buffer
+require("picked").statusline()      -- " feature/cart ↑2 ~3 +1"
+require("picked").get_status()      -- structured table
+require("picked").buffer_status()   -- { added, changed, removed } for a buffer
 ```
 
 These read only from the store and never run git, so calling them on every
@@ -399,11 +405,11 @@ counts are zero, which is how you tell "still reading" from "nothing changed".
 **Telescope**:
 
 ```lua
-require("telescope").load_extension("gitui")
--- :Telescope gitui branches | commits | status | stashes
+require("telescope").load_extension("picked")
+-- :Telescope picked branches | commits | status | stashes
 ```
 
-**Snacks / fzf-lua** — if either is installed, gitui's pickers route through it
+**Snacks / fzf-lua** — if either is installed, picked's pickers route through it
 automatically. Otherwise the built-in fuzzy picker is used.
 
 **which-key** — prefix group names are registered when which-key is present.
@@ -411,12 +417,12 @@ automatically. Otherwise the built-in fuzzy picker is used.
 ### Events
 
 ```lua
-require("gitui").on("PushFinished", function(data)
+require("picked").on("PushFinished", function(data)
   print(data.ok and "pushed" or "push failed")
 end)
 ```
 
-Also published as `User GitUI<Name>` autocommands. Names: `Ready`,
+Also published as `User Picked<Name>` autocommands. Names: `Ready`,
 `RepositoryChanged`, `StatusChanged`, `OperationStarted`, `OperationFinished`,
 `CommitCreated`, `BranchChanged`, `PushFinished`, `PullFinished`,
 `FetchFinished`, `StashChanged`, `ConflictStateChanged`, `PanelOpened`,
@@ -472,20 +478,20 @@ cancel; `<CR>` never confirms a destructive action.
 
 ## Troubleshooting
 
-**`:checkhealth gitui`** first — it covers the common causes.
+**`:checkhealth picked`** first — it covers the common causes.
 
 | Symptom | Cause |
 | --- | --- |
 | Boxes instead of icons | Set `icons = false`, or `vim.g.have_nerd_font = false` |
 | "Authentication required" on push | Terminal prompts are disabled inside Neovim by design. Use a credential helper, an SSH agent, or an SSH remote. |
-| A default mapping does nothing | Something else already owns that key; gitui never overwrites. `:checkhealth gitui` lists the skips — change `prefix` to move the whole set. |
+| A default mapping does nothing | Something else already owns that key; picked never overwrites. `:checkhealth picked` lists the skips — change `prefix` to move the whole set. |
 | The sidebar goes full width | It was briefly the only window. `last_window = "keep_width"` (the default) parks an empty window beside it; `"close"` closes the panel instead. |
 | `<C-s>` does not commit | Your terminal is eating it for flow control. Use `:w`. |
-| Panel is empty | The buffer may be outside the repository. `:GitUIRefresh` |
+| Panel is empty | The buffer may be outside the repository. `:PickedRefresh` |
 | Slow on a huge repository | Raise `refresh_debounce`, or set `auto_refresh = false` |
 
-`:GitUIOutput` shows the raw output of recent git commands — nothing is ever
-swallowed. `:GitUIDebugLog` shows gitui's own log; raise `log_level` to
+`:PickedOutput` shows the raw output of recent git commands — nothing is ever
+swallowed. `:PickedDebugLog` shows picked's own log; raise `log_level` to
 `"debug"` for more.
 
 ---
@@ -494,12 +500,12 @@ swallowed. `:GitUIDebugLog` shows gitui's own log; raise `log_level` to
 
 **Does this replace gitsigns / fugitive / diffview / neogit?**
 It covers what they cover, in one plugin, with one configuration. If you like
-your current setup, keep it — set `signs.enabled = false` to run gitui
+your current setup, keep it — set `signs.enabled = false` to run picked
 alongside gitsigns, for example.
 
 **Why is there no `git rebase -i` todo editor?**
 Interactive rebase is started here and driven by continue/skip/abort, but the
-todo list is not yet editable inside gitui. See *Known limitations*.
+todo list is not yet editable inside picked. See *Known limitations*.
 
 **Does it work over SSH / in a plain terminal?**
 Yes. ASCII fallback, no image protocols, no font requirements.
@@ -515,9 +521,9 @@ These are genuinely not implemented, rather than partially implemented:
 
 - **Interactive rebase todo editing.** `git rebase -i` runs and can be
   continued, skipped or aborted, but reordering or squashing commits from a
-  todo list inside gitui is not supported.
+  todo list inside picked is not supported.
 - **Submodules are detected, not managed.** They are shown and identified;
-  gitui never updates, initialises or commits inside one.
+  picked never updates, initialises or commits inside one.
 - **`git bisect`** is detected as a repository state but has no UI.
 - **Word-level diff highlighting** is not implemented; diffs are line-based.
 - **Partial staging of binary files** is impossible by construction; binary

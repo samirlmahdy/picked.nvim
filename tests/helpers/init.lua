@@ -64,7 +64,7 @@ end
 ---@param opts table  passed to `config.setup`
 ---@param fn fun(merged: table)
 function M.with_config(opts, fn)
-  local config = require("gitui.config")
+  local config = require("picked.config")
   local saved = vim.deepcopy(config.options)
   local ok, err = pcall(fn, config.setup(opts))
   config.options = saved

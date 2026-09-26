@@ -2,9 +2,9 @@
 ---regress silently: concurrency, confirmation, and help staying in sync with
 ---the user's configured mappings.
 
-local gitui = require("gitui")
-local repository = require("gitui.git.repository")
-local store = require("gitui.state")
+local picked = require("picked")
+local repository = require("picked.git.repository")
+local store = require("picked.state")
 local t = require("tests.helpers")
 local helper = t.repo
 
@@ -32,7 +32,7 @@ local function sync(repo)
     state.status = nil
   end
   store.invalidate(repo.root)
-  require("gitui.state.refresh").now(repo, {})
+  require("picked.state.refresh").now(repo, {})
   t.wait_for(function()
     local current = store.get(repo.root)
     return current ~= nil and current.status ~= nil
@@ -40,7 +40,7 @@ local function sync(repo)
 end
 
 describe("views", function()
-  gitui.setup({
+  picked.setup({
     log_level = "off",
     default_keymaps = false,
     file_watch = false,
@@ -54,15 +54,15 @@ describe("views", function()
   })
 
   after_each(function()
-    gitui.close_all()
+    picked.close_all()
     store.reset()
     repository.invalidate()
   end)
 
   describe("diff view", function()
-    local diff_view = require("gitui.ui.diff_view")
+    local diff_view = require("picked.ui.diff_view")
 
-    ---@return string dir, GitRepository repo, GitUIPanel panel
+    ---@return string dir, GitRepository repo, PickedPanel panel
     local function open_diff(spec)
       local dir = helper.init("diffview")
       local base = {}
@@ -80,7 +80,7 @@ describe("views", function()
       sync(repo)
 
       diff_view.open(repo, { path = "f.txt", spec = spec or { kind = "worktree" } })
-      local panel = require("gitui.ui.panel").get("diff")
+      local panel = require("picked.ui.panel").get("diff")
       -- A comparison with no differences renders a header but no `@@`, so wait
       -- for the loading placeholder to clear rather than for a hunk.
       t.wait_for(function()
@@ -158,8 +158,8 @@ describe("views", function()
   end)
 
   describe("diff view presentations", function()
-    local diff_view = require("gitui.ui.diff_view")
-    local config = require("gitui.config")
+    local diff_view = require("picked.ui.diff_view")
+    local config = require("picked.config")
 
     ---A file with three well-separated changes, so hunk jumping is meaningful.
     local function three_hunk_repo(label)
@@ -184,7 +184,7 @@ describe("views", function()
 
     local function open_unified(repo)
       diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "unified" })
-      local panel = require("gitui.ui.panel").get("diff")
+      local panel = require("picked.ui.panel").get("diff")
       t.wait_for(function()
         return panel.canvas ~= nil and text_of(panel.bufnr):find("@@", 1, true) ~= nil
       end, "the unified diff never rendered")
@@ -238,7 +238,7 @@ describe("views", function()
       end, vim.api.nvim_tabpage_list_wins(0))
       assert.equals(2, #diff_windows, "the split view needs exactly two diff windows")
 
-      -- Native diff mode means ]c works without gitui doing anything.
+      -- Native diff mode means ]c works without picked doing anything.
       vim.api.nvim_set_current_win(diff_windows[1])
       vim.cmd("normal! gg")
       local first = vim.api.nvim_win_get_cursor(0)[1]
@@ -250,7 +250,7 @@ describe("views", function()
         return not diff_view.split_is_open()
       end, "the split view never closed")
       t.wait_for(function()
-        return require("gitui.ui.panel").get("diff"):is_open()
+        return require("picked.ui.panel").get("diff"):is_open()
       end, "the unified view never came back")
     end)
 
@@ -281,7 +281,7 @@ describe("views", function()
       -- A whole-tree diff has no single file, so no side-by-side form.
       diff_view.open(repo, { spec = { kind = "worktree" }, view = "split" })
       t.wait_for(function()
-        return require("gitui.ui.panel").get("diff"):is_open()
+        return require("picked.ui.panel").get("diff"):is_open()
       end, "the unified fallback never opened")
       assert.is_false(diff_view.split_is_open())
     end)
@@ -302,8 +302,8 @@ describe("views", function()
     -- A float sits above the editor area, so opening a diff or a file from one
     -- used to put the result underneath the list that launched it: the user
     -- asks to see something and nothing appears to happen.
-    local panel_lib = require("gitui.ui.panel")
-    local floats = require("gitui.ui.floats")
+    local panel_lib = require("picked.ui.panel")
+    local floats = require("picked.ui.floats")
 
     ---A repository with two commits and an uncommitted change.
     local function history_repo()
@@ -333,7 +333,7 @@ describe("views", function()
     end
 
     local function open_history(repo)
-      require("gitui.ui.log").open(repo, {})
+      require("picked.ui.log").open(repo, {})
       local panel = panel_lib.get("log")
       t.wait_for(function()
         return panel:is_open()
@@ -361,7 +361,7 @@ describe("views", function()
       vim.wait(400)
 
       assert.is_false(panel:is_open(), "the history should stand aside for the details")
-      assert.same({ "gitui-commit-details" }, open_floats())
+      assert.same({ "picked-commit-details" }, open_floats())
     end)
 
     it("dismisses the history when a diff is opened from it", function()
@@ -388,7 +388,7 @@ describe("views", function()
       local panel = open_history(repo)
       assert.is_true(panel:is_open())
 
-      require("gitui.ui.window").open_file(dir .. "/a.lua", {})
+      require("picked.ui.window").open_file(dir .. "/a.lua", {})
       vim.wait(300)
 
       assert.same({}, open_floats(), "the float should not cover the file")
@@ -398,31 +398,31 @@ describe("views", function()
     it("keeps only one float panel open at a time", function()
       local _, repo = history_repo()
 
-      require("gitui.ui.branches").open(repo)
+      require("picked.ui.branches").open(repo)
       t.wait_for(function()
         return panel_lib.get("branches"):is_open()
       end, "branches never opened")
 
-      require("gitui.ui.log").open(repo, {})
+      require("picked.ui.log").open(repo, {})
       t.wait_for(function()
         return panel_lib.get("log"):is_open()
       end, "history never opened")
       vim.wait(200)
 
       assert.is_false(panel_lib.get("branches"):is_open(), "branches should stand aside")
-      assert.same({ "gitui-log" }, open_floats())
+      assert.same({ "picked-log" }, open_floats())
     end)
 
     it("dismisses help and the output window too", function()
       local _, repo = history_repo()
 
-      require("gitui.ui.help").show("source_control")
-      require("gitui.ui.output").store("git push", "some output", true)
-      require("gitui.ui.output").open({ focus = false })
+      require("picked.ui.help").show("source_control")
+      require("picked.ui.output").store("git push", "some output", true)
+      require("picked.ui.output").open({ focus = false })
       vim.wait(200)
       assert.is_true(#open_floats() > 0, "the floats should be on screen to begin with")
 
-      require("gitui.ui.diff_view").open(repo, { path = "a.lua", spec = { kind = "worktree" } })
+      require("picked.ui.diff_view").open(repo, { path = "a.lua", spec = { kind = "worktree" } })
       t.wait_for(function()
         return panel_lib.get("diff"):is_open()
       end, "the diff never opened")
@@ -444,7 +444,7 @@ describe("views", function()
   end)
 
   describe("blame", function()
-    local blame = require("gitui.ui.blame")
+    local blame = require("picked.ui.blame")
 
     ---A file whose lines come from three different commits.
     local function layered_repo()
@@ -466,7 +466,7 @@ describe("views", function()
       local file_win, blame_win
       for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
         local bufnr = vim.api.nvim_win_get_buf(winid)
-        if vim.bo[bufnr].filetype == "gitui-blame" then
+        if vim.bo[bufnr].filetype == "picked-blame" then
           blame_win = winid
         elseif vim.api.nvim_buf_get_name(bufnr):match("f%.lua$") then
           file_win = winid
@@ -526,7 +526,7 @@ describe("views", function()
       vim.wait(400)
 
       local file_win, blame_win = panes()
-      local ns = vim.api.nvim_create_namespace("gitui_blame_sync")
+      local ns = vim.api.nvim_create_namespace("picked_blame_sync")
 
       local function marks(winid)
         local bufnr = vim.api.nvim_win_get_buf(winid)
@@ -549,7 +549,7 @@ describe("views", function()
       local has_current, block_lines = false, {}
       for _, entry in ipairs(in_file) do
         local lnum, group = entry:match("^(%d+):(.+)$")
-        if group == "GitUIBlameCurrentLine" then
+        if group == "PickedBlameCurrentLine" then
           has_current = true
           assert.equals("3", lnum)
         else
@@ -570,12 +570,12 @@ describe("views", function()
 
       local _, blame_win = panes()
       local bufnr = vim.api.nvim_win_get_buf(blame_win)
-      local ns = vim.api.nvim_create_namespace("gitui_blame")
+      local ns = vim.api.nvim_create_namespace("picked_blame")
 
       local groups = {}
       for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })) do
         local group = mark[4].hl_group
-        if group and group:match("^GitUIGraph%d$") then
+        if group and group:match("^PickedGraph%d$") then
           groups[mark[2] + 1] = group
         end
       end
@@ -604,7 +604,7 @@ describe("views", function()
       blame.close()
       vim.wait(150)
 
-      local ns = vim.api.nvim_create_namespace("gitui_blame_sync")
+      local ns = vim.api.nvim_create_namespace("picked_blame_sync")
       assert.equals(0, #vim.api.nvim_buf_get_extmarks(file_bufnr, ns, 0, -1, {}))
       assert.is_false(vim.wo[file_win].scrollbind, "scrollbind must be released")
       assert.is_false(vim.wo[file_win].cursorbind, "cursorbind must be released")
@@ -613,7 +613,7 @@ describe("views", function()
   end)
 
   describe("commit editor", function()
-    local commit = require("gitui.ui.commit")
+    local commit = require("picked.ui.commit")
 
     it("opens a modifiable gitcommit buffer with the staged list beside it", function()
       local dir = helper.simple()
@@ -704,8 +704,8 @@ describe("views", function()
       end
       local repo = activate(dir)
 
-      require("gitui.ui.log").open(repo, {})
-      local panel = require("gitui.ui.panel").get("log")
+      require("picked.ui.log").open(repo, {})
+      local panel = require("picked.ui.panel").get("log")
       t.wait_for(function()
         return panel.canvas ~= nil and text_of(panel.bufnr):find("commit number 3", 1, true) ~= nil
       end, "the log never rendered")
@@ -731,8 +731,8 @@ describe("views", function()
       helper.git(dir, { "branch", "feature/one" })
       local repo = activate(dir)
 
-      require("gitui.ui.branches").open(repo)
-      local panel = require("gitui.ui.panel").get("branches")
+      require("picked.ui.branches").open(repo)
+      local panel = require("picked.ui.panel").get("branches")
       t.wait_for(function()
         return panel.canvas ~= nil and text_of(panel.bufnr):find("feature/one", 1, true) ~= nil
       end, "branches never rendered")
@@ -755,8 +755,8 @@ describe("views", function()
       local dir = helper.simple()
       local repo = activate(dir)
 
-      require("gitui.ui.stash").open(repo)
-      local panel = require("gitui.ui.panel").get("stash")
+      require("picked.ui.stash").open(repo)
+      local panel = require("picked.ui.panel").get("stash")
       t.wait_for(function()
         return panel.canvas ~= nil and text_of(panel.bufnr):find("No stashes", 1, true) ~= nil
       end, "the empty stash view never rendered")
@@ -764,7 +764,7 @@ describe("views", function()
       helper.write(dir, "README.md", "# changed\n")
       helper.git(dir, { "stash", "push", "-m", "my work" })
 
-      require("gitui.ui.stash").open(repo)
+      require("picked.ui.stash").open(repo)
       t.wait_for(function()
         return text_of(panel.bufnr):find("my work", 1, true) ~= nil
       end, "the stash never appeared")
@@ -774,10 +774,10 @@ describe("views", function()
   end)
 
   describe("help", function()
-    local help = require("gitui.ui.help")
+    local help = require("picked.ui.help")
 
     it("shows the user's configured keys, not hard-coded ones", function()
-      local config = require("gitui.config")
+      local config = require("picked.config")
       local original = config.options.keymaps.source_control.stage
       config.options.keymaps.source_control.stage = "gs"
 
@@ -793,7 +793,7 @@ describe("views", function()
     end)
 
     it("omits actions the user disabled", function()
-      local config = require("gitui.config")
+      local config = require("picked.config")
       local original = config.options.keymaps.source_control.discard
       config.options.keymaps.source_control.discard = false
 
@@ -807,7 +807,7 @@ describe("views", function()
   end)
 
   describe("confirmation", function()
-    local confirm = require("gitui.ui.confirm")
+    local confirm = require("picked.ui.confirm")
 
     it("declines by default and confirms on y", function()
       local answer = nil
@@ -876,7 +876,7 @@ describe("views", function()
     it("coalesces concurrent refreshes into one query", function()
       local dir = helper.kitchen_sink()
       local repo = activate(dir)
-      local refresh = require("gitui.state.refresh")
+      local refresh = require("picked.state.refresh")
 
       local results = {}
       for _ = 1, 5 do
@@ -902,7 +902,7 @@ describe("views", function()
       end
       local repo = activate(dir)
 
-      local command = require("gitui.git.command")
+      local command = require("picked.git.command")
       local completed = 0
       for index = 1, 8 do
         command.run({ "add", "--", ("f%d.txt"):format(index) }, {
@@ -927,7 +927,7 @@ describe("views", function()
 
   describe("picker", function()
     it("filters items as the query changes", function()
-      local text_util = require("gitui.utils.text")
+      local text_util = require("picked.utils.text")
       local items = {
         { text = "src/api/users.lua" },
         { text = "src/api/auth.lua" },
@@ -959,20 +959,20 @@ describe("views", function()
 
       local buffers_before = #vim.api.nvim_list_bufs()
 
-      require("gitui.ui.source_control").open()
-      require("gitui.ui.log").open(repo, {})
-      require("gitui.ui.branches").open(repo)
-      require("gitui.ui.stash").open(repo)
+      require("picked.ui.source_control").open()
+      require("picked.ui.log").open(repo, {})
+      require("picked.ui.branches").open(repo)
+      require("picked.ui.stash").open(repo)
 
-      gitui.reset()
+      picked.reset()
       vim.wait(200)
 
       local remaining = vim.tbl_filter(function(bufnr)
         local name = vim.api.nvim_buf_get_name(bufnr)
-        return name:match("^gitui://") ~= nil
+        return name:match("^picked://") ~= nil
       end, vim.api.nvim_list_bufs())
 
-      assert.equals(0, #remaining, "gitui buffers survived reset: " .. vim.inspect(vim.tbl_map(function(b)
+      assert.equals(0, #remaining, "picked buffers survived reset: " .. vim.inspect(vim.tbl_map(function(b)
         return vim.api.nvim_buf_get_name(b)
       end, remaining)))
 

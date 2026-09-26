@@ -1,7 +1,7 @@
-local diff_api = require("gitui.git.diff")
-local hunks_api = require("gitui.git.hunks")
-local repository = require("gitui.git.repository")
-local staging = require("gitui.git.staging")
+local diff_api = require("picked.git.diff")
+local hunks_api = require("picked.git.hunks")
+local repository = require("picked.git.repository")
+local staging = require("picked.git.staging")
 local t = require("tests.helpers")
 local helper = t.repo
 

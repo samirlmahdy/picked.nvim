@@ -5,12 +5,12 @@
 ---passes, the complete "open repo → stage → commit → branch → push → pull →
 ---inspect → stash → conflict → resolve" loop works without leaving Neovim.
 
-local gitui = require("gitui")
-local git = require("gitui.git")
-local operations = require("gitui.operations")
-local refresh = require("gitui.state.refresh")
-local repository = require("gitui.git.repository")
-local store = require("gitui.state")
+local picked = require("picked")
+local git = require("picked.git")
+local operations = require("picked.operations")
+local refresh = require("picked.state.refresh")
+local repository = require("picked.git.repository")
+local store = require("picked.state")
 local t = require("tests.helpers")
 local helper = t.repo
 
@@ -62,7 +62,7 @@ local function activate(repo)
 end
 
 describe("the full git workflow", function()
-  gitui.setup({
+  picked.setup({
     log_level = "off",
     default_keymaps = false,
     file_watch = false,
@@ -210,8 +210,8 @@ describe("the full git workflow", function()
     --- Pull (with a commit made elsewhere) ----------------------------------
     local other = helper.tmpdir("clone")
     helper.git(vim.fn.fnamemodify(other, ":h"), { "clone", "--quiet", remote_dir, other })
-    helper.git(other, { "config", "user.name", "gitui test" })
-    helper.git(other, { "config", "user.email", "test@gitui.invalid" })
+    helper.git(other, { "config", "user.name", "picked test" })
+    helper.git(other, { "config", "user.email", "test@picked.invalid" })
     helper.git(other, { "checkout", "--quiet", "feature/cart" })
     helper.write(other, "remote-change.txt", "from elsewhere\n")
     helper.git(other, { "add", "-A" })
@@ -292,7 +292,7 @@ describe("the full git workflow", function()
     assert.equals("merge", store.get(repo.root).git_state.kind)
 
     --- Open the conflicted file and resolve it through the buffer ---------
-    local conflict = require("gitui.ui.conflict")
+    local conflict = require("picked.ui.conflict")
     conflict.open(repo, "conflict.lua")
 
     local bufnr = vim.fn.bufnr(dir .. "/conflict.lua")
@@ -377,7 +377,7 @@ describe("the full git workflow", function()
     assert.is_true(state.head.detached)
     assert.is_nil(state.head.branch)
 
-    local summary = gitui.get_status()
+    local summary = picked.get_status()
     assert.is_true(summary.detached)
     assert.is_not_nil(summary.branch, "a detached HEAD should still report its short oid")
   end)

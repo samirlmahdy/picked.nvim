@@ -20,10 +20,10 @@ function M.git(cwd, args)
       cwd = cwd,
       text = true,
       env = {
-        GIT_AUTHOR_NAME = "gitui test",
-        GIT_AUTHOR_EMAIL = "test@gitui.invalid",
-        GIT_COMMITTER_NAME = "gitui test",
-        GIT_COMMITTER_EMAIL = "test@gitui.invalid",
+        GIT_AUTHOR_NAME = "picked test",
+        GIT_AUTHOR_EMAIL = "test@picked.invalid",
+        GIT_COMMITTER_NAME = "picked test",
+        GIT_COMMITTER_EMAIL = "test@picked.invalid",
         GIT_AUTHOR_DATE = "2026-01-01T00:00:00+00:00",
         GIT_COMMITTER_DATE = "2026-01-01T00:00:00+00:00",
         GIT_CONFIG_GLOBAL = "/dev/null",
@@ -48,10 +48,10 @@ function M.git_try(cwd, args)
       cwd = cwd,
       text = true,
       env = {
-        GIT_AUTHOR_NAME = "gitui test",
-        GIT_AUTHOR_EMAIL = "test@gitui.invalid",
-        GIT_COMMITTER_NAME = "gitui test",
-        GIT_COMMITTER_EMAIL = "test@gitui.invalid",
+        GIT_AUTHOR_NAME = "picked test",
+        GIT_AUTHOR_EMAIL = "test@picked.invalid",
+        GIT_COMMITTER_NAME = "picked test",
+        GIT_COMMITTER_EMAIL = "test@picked.invalid",
         GIT_CONFIG_GLOBAL = "/dev/null",
         GIT_CONFIG_SYSTEM = "/dev/null",
         GIT_TERMINAL_PROMPT = "0",
@@ -110,8 +110,8 @@ end
 function M.init(label)
   local dir = M.tmpdir(label)
   M.git(dir, { "init", "--quiet", "--initial-branch=main" })
-  M.git(dir, { "config", "user.name", "gitui test" })
-  M.git(dir, { "config", "user.email", "test@gitui.invalid" })
+  M.git(dir, { "config", "user.name", "picked test" })
+  M.git(dir, { "config", "user.email", "test@picked.invalid" })
   M.git(dir, { "config", "commit.gpgsign", "false" })
   M.git(dir, { "config", "core.autocrlf", "false" })
   return dir

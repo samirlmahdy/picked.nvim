@@ -1,4 +1,4 @@
-local hunks = require("gitui.git.hunks")
+local hunks = require("picked.git.hunks")
 
 describe("hunk engine", function()
   describe("parsing", function()

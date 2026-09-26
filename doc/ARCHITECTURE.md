@@ -1,6 +1,6 @@
 # Architecture
 
-This document explains how gitui.nvim is put together and, more usefully, *why*
+This document explains how picked.nvim is put together and, more usefully, *why*
 the non-obvious decisions were made. It is aimed at someone about to change the
 code.
 
@@ -69,7 +69,7 @@ GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_CONFIG GIT_CONFIG_PARAMETERS
 This matters in a specific, real scenario: when Neovim is launched *by* git as
 its editor (`git commit` with `core.editor=nvim`), those variables are set and
 point at the repository git is currently operating on. Inheriting them would
-silently redirect gitui's operations to a different index than the one it
+silently redirect picked's operations to a different index than the one it
 resolved.
 
 Three more environment settings prevent hangs rather than bugs:
@@ -183,7 +183,7 @@ The second rule is the non-obvious one. In a change hunk git emits all `-`
 lines before all `+` lines, so every deletion in the block shares one anchor:
 the first new-side line of the replacement. Selecting that line takes the whole
 replacement, which is what the gutter sign implies. This is documented at
-`:help gitui-line-staging` because it is user-visible behaviour.
+`:help picked-line-staging` because it is user-visible behaviour.
 
 ### Path quoting
 
@@ -212,7 +212,7 @@ cannot race for `index.lock`. Read-only commands are not queued — a status
 refresh must not wait behind a two-minute fetch.
 
 Read-only commands instead pass `--no-optional-locks`. This was not a
-theoretical concern: without it, gitui's background `git status` refreshes the
+theoretical concern: without it, picked's background `git status` refreshes the
 index stat cache, takes the index lock, and makes a concurrent `git stash` or
 `git commit` fail with *"could not write index"*. The flag exists precisely for
 tools that poll status alongside other git processes. The cost is that our
@@ -230,9 +230,9 @@ segments, each carrying arbitrary metadata.
 
 ```lua
 canvas:row(item)
-  :add("M ", "GitUIModified", "open")   -- text, highlight, click action
+  :add("M ", "PickedModified", "open")   -- text, highlight, click action
   :add("src/api/users.lua")
-  :right(" ← old.lua ", "GitUIDim")
+  :right(" ← old.lua ", "PickedDim")
 ```
 
 Attaching metadata per row is what makes the whole UI uniform: a keymap asks
@@ -270,8 +270,8 @@ subtly wrong in eight separate places. It owns:
 - an augroup per panel, deleted on destroy,
 - `on_destroy` hooks, used by every view to unsubscribe from the event bus.
 
-`views_spec.lua` asserts that after `gitui.reset()` no buffer named
-`gitui://…` survives.
+`views_spec.lua` asserts that after `picked.reset()` no buffer named
+`picked://…` survives.
 
 ## Mouse model
 

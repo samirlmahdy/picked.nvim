@@ -1,5 +1,5 @@
-local status = require("gitui.git.status")
-local repository = require("gitui.git.repository")
+local status = require("picked.git.status")
+local repository = require("picked.git.repository")
 local t = require("tests.helpers")
 local helper = t.repo
 

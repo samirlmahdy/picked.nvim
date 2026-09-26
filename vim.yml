@@ -1,5 +1,5 @@
 ---
-# Minimal selene standard library for the Neovim API surface gitui uses.
+# Minimal selene standard library for the Neovim API surface picked uses.
 base: lua51
 globals:
   vim:

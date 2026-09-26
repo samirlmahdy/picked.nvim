@@ -1,10 +1,10 @@
--- Example gitui.nvim configuration.
+-- Example picked.nvim configuration.
 --
 -- Every value shown is the default unless a comment says otherwise, so you can
 -- delete anything you do not want to change. The shortest useful configuration
--- is `require("gitui").setup({})`.
+-- is `require("picked").setup({})`.
 
-require("gitui").setup({
+require("picked").setup({
   --- Layout ------------------------------------------------------------------
 
   position = "left", -- "left" | "right" | "float"
@@ -36,7 +36,7 @@ require("gitui").setup({
   --- Safety ------------------------------------------------------------------
   --
   -- Setting any of these to false is an explicit opt-in to an unsafe mode.
-  -- `:checkhealth gitui` reports the ones you have turned off.
+  -- `:checkhealth picked` reports the ones you have turned off.
 
   confirm = {
     discard = true,
@@ -76,7 +76,7 @@ require("gitui").setup({
 
   --- Inline signs ------------------------------------------------------------
   --
-  -- Set `enabled = false` to run gitui alongside gitsigns.nvim.
+  -- Set `enabled = false` to run picked alongside gitsigns.nvim.
 
   signs = {
     enabled = true,
@@ -129,7 +129,7 @@ require("gitui").setup({
   browse = {
     opener = nil, -- nil auto-detects
     hosts = {
-      -- Teach gitui the URL layout of a self-hosted forge:
+      -- Teach picked the URL layout of a self-hosted forge:
       -- ["git.corp.internal"] = "gitlab",
     },
   },
@@ -145,12 +145,12 @@ require("gitui").setup({
 
   --- Keymaps -----------------------------------------------------------------
   --
-  -- gitui never overwrites a mapping you already have; a default whose key is
-  -- taken is skipped, and `:checkhealth gitui` lists the skips.
+  -- picked never overwrites a mapping you already have; a default whose key is
+  -- taken is skipped, and `:checkhealth picked` lists the skips.
 
   default_keymaps = true,
 
-  -- Every global mapping hangs off this. gitui stays out of `<leader>g`
+  -- Every global mapping hangs off this. picked stays out of `<leader>g`
   -- because LazyVim and friends already own most of it; change this one line
   -- to move the whole set, e.g. prefix = "<leader>gui".
   prefix = "<leader>gu",
@@ -194,7 +194,7 @@ require("gitui").setup({
 
   --- Integrations ------------------------------------------------------------
   --
-  -- All optional, all detected at runtime. Set any to false to force gitui's
+  -- All optional, all detected at runtime. Set any to false to force picked's
   -- own implementation.
 
   integrations = {
@@ -210,24 +210,24 @@ require("gitui").setup({
 -- lualine:
 --
 --   sections = {
---     lualine_b = { require("gitui.integrations").lualine() },
+--     lualine_b = { require("picked.integrations").lualine() },
 --   }
 --
 -- anything else:
 --
---   require("gitui").statusline()      --> " feature/cart ↑2 ~3 +1"
---   require("gitui").get_status()      --> structured table
---   require("gitui").buffer_status()   --> { added, changed, removed }
+--   require("picked").statusline()      --> " feature/cart ↑2 ~3 +1"
+--   require("picked").get_status()      --> structured table
+--   require("picked").buffer_status()   --> { added, changed, removed }
 
 --- Telescope -----------------------------------------------------------------
 
--- require("telescope").load_extension("gitui")
---   :Telescope gitui branches | commits | status | stashes
+-- require("telescope").load_extension("picked")
+--   :Telescope picked branches | commits | status | stashes
 
 --- Events --------------------------------------------------------------------
 
 -- vim.api.nvim_create_autocmd("User", {
---   pattern = "GitUIPushFinished",
+--   pattern = "PickedPushFinished",
 --   callback = function(args)
 --     vim.notify(args.data.ok and "pushed" or "push failed")
 --   end,

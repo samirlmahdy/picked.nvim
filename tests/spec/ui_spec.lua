@@ -2,22 +2,22 @@
 ---git. These are the tests that catch a panel which renders but cannot be
 ---used.
 
-local gitui = require("gitui")
-local repository = require("gitui.git.repository")
-local source_control = require("gitui.ui.source_control")
-local store = require("gitui.state")
+local picked = require("picked")
+local repository = require("picked.git.repository")
+local source_control = require("picked.ui.source_control")
+local store = require("picked.state")
 local t = require("tests.helpers")
 local helper = t.repo
 
 ---Lines currently displayed by a panel.
----@param panel GitUIPanel
+---@param panel PickedPanel
 ---@return string[]
 local function lines(panel)
   assert(panel.bufnr and vim.api.nvim_buf_is_valid(panel.bufnr), "panel has no buffer")
   return vim.api.nvim_buf_get_lines(panel.bufnr, 0, -1, false)
 end
 
----@param panel GitUIPanel
+---@param panel PickedPanel
 ---@param needle string
 ---@return integer|nil
 local function find_line(panel, needle)
@@ -31,7 +31,7 @@ end
 
 ---Put the cursor on the first row matching `needle` and press `keys` so the
 ---buffer-local mapping actually runs.
----@param panel GitUIPanel
+---@param panel PickedPanel
 ---@param needle string
 ---@param keys string
 local function press_on(panel, needle, keys)
@@ -46,7 +46,7 @@ end
 
 ---Open the panel on a repository and wait for its first render.
 ---@param dir string
----@return GitUIPanel, GitRepository
+---@return PickedPanel, GitRepository
 local function open_panel(dir)
   repository.invalidate()
   local repo = assert(repository.detect(dir))
@@ -75,7 +75,7 @@ local function wait_for_status(repo, predicate, message)
 end
 
 describe("source control panel", function()
-  gitui.setup({
+  picked.setup({
     log_level = "off",
     default_keymaps = false,
     file_watch = false,
@@ -216,7 +216,7 @@ describe("source control panel", function()
     local panel = open_panel(dir)
     assert.is_false(vim.bo[panel.bufnr].modifiable)
     assert.equals("nofile", vim.bo[panel.bufnr].buftype)
-    assert.equals("gitui-source-control", vim.bo[panel.bufnr].filetype)
+    assert.equals("picked-source-control", vim.bo[panel.bufnr].filetype)
   end)
 
   it("closes without leaving windows or autocommands behind", function()
@@ -239,8 +239,8 @@ describe("source control panel", function()
     -- and removed lines, which is the whole point of the panel for anyone
     -- arriving from VS Code. It regressed once by being implemented as a
     -- passive refresh that never opened anything.
-    local config = require("gitui.config")
-    local diff_view = require("gitui.ui.diff_view")
+    local config = require("picked.config")
+    local diff_view = require("picked.ui.diff_view")
 
     local function with_preview(mode, fn)
       local previous = config.options.diff.preview
@@ -274,11 +274,11 @@ describe("source control panel", function()
         select_row(panel, "app.lua")
 
         t.wait_for(function()
-          local dp = require("gitui.ui.panel").get("diff")
+          local dp = require("picked.ui.panel").get("diff")
           return dp ~= nil and dp:is_open() and dp.canvas ~= nil
         end, "the diff never opened")
 
-        local dp = require("gitui.ui.panel").get("diff")
+        local dp = require("picked.ui.panel").get("diff")
         t.wait_for(function()
           return table.concat(vim.api.nvim_buf_get_lines(dp.bufnr, 0, -1, false), "\n"):find("BRAVO", 1, true) ~= nil
         end, "the diff never rendered the change")
@@ -306,11 +306,11 @@ describe("source control panel", function()
       with_preview("auto", function()
         select_row(panel, "one.lua")
         t.wait_for(function()
-          local dp = require("gitui.ui.panel").get("diff")
+          local dp = require("picked.ui.panel").get("diff")
           return dp ~= nil and dp:is_open()
         end, "the diff never opened")
 
-        local dp = require("gitui.ui.panel").get("diff")
+        local dp = require("picked.ui.panel").get("diff")
         t.wait_for(function()
           return table.concat(vim.api.nvim_buf_get_lines(dp.bufnr, 0, -1, false), "\n"):find("ONE", 1, true) ~= nil
         end, "first file never rendered")
@@ -334,7 +334,7 @@ describe("source control panel", function()
       with_preview(false, function()
         select_row(panel, "app.lua")
         vim.wait(500)
-        local dp = require("gitui.ui.panel").get("diff")
+        local dp = require("picked.ui.panel").get("diff")
         assert.is_true(dp == nil or not dp:is_open(), "preview = false must not open a diff")
       end)
     end)
@@ -351,7 +351,7 @@ describe("source control panel", function()
       with_preview("follow", function()
         select_row(panel, "app.lua")
         vim.wait(500)
-        local dp = require("gitui.ui.panel").get("diff")
+        local dp = require("picked.ui.panel").get("diff")
         assert.is_true(dp == nil or not dp:is_open(), "follow mode must not open a diff")
       end)
     end)
@@ -438,8 +438,8 @@ describe("source control panel", function()
       local panel = open_panel(dir)
 
       -- Open the file the way <CR> does, so there is a real editor window.
-      local path_util = require("gitui.utils.path")
-      local editor_win = require("gitui.ui.window").open_file(path_util.join(dir, "a.lua"), {
+      local path_util = require("picked.utils.path")
+      local editor_win = require("picked.ui.window").open_file(path_util.join(dir, "a.lua"), {
         exclude = { panel.winid },
       })
       assert.is_not_nil(editor_win)
@@ -447,11 +447,11 @@ describe("source control panel", function()
       local window_count = #vim.api.nvim_tabpage_list_wins(0)
 
       -- The diff borrows that window.
-      require("gitui.ui.diff_view").open(vim.deepcopy(store.active().repo), {
+      require("picked.ui.diff_view").open(vim.deepcopy(store.active().repo), {
         path = "a.lua",
         spec = { kind = "worktree" },
       })
-      local diff_panel = require("gitui.ui.panel").get("diff")
+      local diff_panel = require("picked.ui.panel").get("diff")
       t.wait_for(function()
         return diff_panel:is_open()
       end, "the diff never opened")
@@ -479,7 +479,7 @@ describe("source control panel", function()
   end)
 
   describe("global keymaps", function()
-    local config = require("gitui.config")
+    local config = require("picked.config")
 
     it("expands <prefix> into every global mapping", function()
       t.with_config({ default_keymaps = false, log_level = "off" }, function(merged)
@@ -559,13 +559,13 @@ describe("status summary API", function()
     store.ensure(repo)
     store.set_active(repo)
 
-    require("gitui.state.refresh").now(repo, {})
+    require("picked.state.refresh").now(repo, {})
     t.wait_for(function()
       local state = store.get(repo.root)
       return state ~= nil and state.status ~= nil
     end, "status never loaded")
 
-    local summary = gitui.get_status()
+    local summary = picked.get_status()
     assert.equals("main", summary.branch)
     assert.equals(repo.root, summary.root)
     assert.is_true(summary.staged > 0)
@@ -573,14 +573,14 @@ describe("status summary API", function()
     assert.is_false(summary.clean)
     assert.equals("normal", summary.state)
 
-    local line = gitui.statusline({ icons = false })
+    local line = picked.statusline({ icons = false })
     assert.is_not_nil(line:find("main", 1, true), line)
   end)
 
   it("returns an empty statusline with no repository", function()
     store.reset()
-    assert.equals("", gitui.statusline())
-    assert.is_nil(gitui.get_status().branch)
+    assert.equals("", picked.statusline())
+    assert.is_nil(picked.get_status().branch)
   end)
 
   it("reports an in-progress merge", function()
@@ -589,20 +589,20 @@ describe("status summary API", function()
     store.ensure(repo)
     store.set_active(repo)
 
-    require("gitui.state.refresh").now(repo, {})
+    require("picked.state.refresh").now(repo, {})
     t.wait_for(function()
       local state = store.get(repo.root)
       return state ~= nil and state.status ~= nil
     end, "status never loaded")
 
-    local summary = gitui.get_status()
+    local summary = picked.get_status()
     assert.equals("merge", summary.state)
     assert.is_true(summary.conflicts > 0)
   end)
 end)
 
 describe("inline signs", function()
-  local signs = require("gitui.ui.signs")
+  local signs = require("picked.ui.signs")
 
   after_each(function()
     signs.teardown()
@@ -628,7 +628,7 @@ describe("inline signs", function()
     end, "signs never computed a hunk")
 
     local attachment = signs.attachment(bufnr)
-    local hunks_api = require("gitui.git.hunks")
+    local hunks_api = require("picked.git.hunks")
     assert.equals(1, #attachment.hunks)
     -- The changed line is line 2, so that is where the hunk must resolve.
     assert.is_not_nil(hunks_api.at_line(attachment.hunks, 2))
@@ -638,7 +638,7 @@ describe("inline signs", function()
 
     -- The sign must actually be placed in the sign column.
     local marks =
-      vim.api.nvim_buf_get_extmarks(bufnr, vim.api.nvim_create_namespace("gitui_signs"), 0, -1, { details = true })
+      vim.api.nvim_buf_get_extmarks(bufnr, vim.api.nvim_create_namespace("picked_signs"), 0, -1, { details = true })
     assert.is_true(#marks >= 1)
 
     vim.cmd("noautocmd bwipeout!")

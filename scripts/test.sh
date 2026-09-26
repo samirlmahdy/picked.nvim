@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the gitui test suite in a headless Neovim.
+# Run the picked test suite in a headless Neovim.
 #
 #   scripts/test.sh                 # everything under tests/spec
 #   scripts/test.sh status_spec     # a single spec file (name or path)

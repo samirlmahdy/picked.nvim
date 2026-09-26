@@ -45,11 +45,11 @@ vim.opt.more = false
 vim.opt.termguicolors = true
 
 -- Tests exercise git heavily; make sure the child processes are deterministic.
-vim.env.GIT_AUTHOR_NAME = "gitui test"
-vim.env.GIT_AUTHOR_EMAIL = "test@gitui.invalid"
-vim.env.GIT_COMMITTER_NAME = "gitui test"
-vim.env.GIT_COMMITTER_EMAIL = "test@gitui.invalid"
+vim.env.GIT_AUTHOR_NAME = "picked test"
+vim.env.GIT_AUTHOR_EMAIL = "test@picked.invalid"
+vim.env.GIT_COMMITTER_NAME = "picked test"
+vim.env.GIT_COMMITTER_EMAIL = "test@picked.invalid"
 vim.env.GIT_CONFIG_GLOBAL = "/dev/null"
 vim.env.GIT_CONFIG_SYSTEM = "/dev/null"
 
-require("gitui.config").setup({ log_level = "off", default_keymaps = false })
+require("picked.config").setup({ log_level = "off", default_keymaps = false })
