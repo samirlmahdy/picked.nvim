@@ -26,9 +26,14 @@ local M = {}
 
 local open_winid = nil
 local open_bufnr = nil
+local unregister = nil
 
 ---Close any open menu.
 function M.close()
+  if unregister then
+    unregister()
+    unregister = nil
+  end
   if open_winid then
     window.close(open_winid)
     open_winid = nil
@@ -105,6 +110,7 @@ function M.open(opts)
   col = math.min(col, math.max(0, vim.o.columns - width - 2))
 
   open_bufnr = bufnr
+  unregister = require("gitui.ui.floats").register(M.close)
   open_winid = window.open_float(bufnr, {
     title = opts.title,
     width = width,

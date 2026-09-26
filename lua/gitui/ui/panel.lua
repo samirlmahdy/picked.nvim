@@ -150,6 +150,11 @@ function Panel:open(opts)
   local previous_win = vim.api.nvim_get_current_win()
 
   if self.spec.layout == "float" then
+    -- One float at a time. Stacking history on top of branches on top of a
+    -- menu buries whichever one the user actually wants, and dismissing them
+    -- one by one is nobody's idea of navigation.
+    require("gitui.ui.floats").close_all({ except = self })
+
     local float_opts = vim.tbl_extend("force", self.spec.float or {}, { title = self:title() })
     self.winid = window.open_float(bufnr, float_opts)
   elseif self.spec.layout == "tab" then

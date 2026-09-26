@@ -23,6 +23,7 @@ local history = {}
 
 local winid = nil
 local bufnr = nil
+local unregister = nil
 local namespace = vim.api.nvim_create_namespace("gitui_output")
 
 ---Record command output.
@@ -131,14 +132,29 @@ function M.open(opts)
     })
     vim.wo[winid].wrap = true
     vim.wo[winid].cursorline = false
+    unregister = require("gitui.ui.floats").register(M.close)
   end
 
   M.render()
 end
 
 function M.close()
+  if unregister then
+    unregister()
+    unregister = nil
+  end
   window.close(winid)
   winid = nil
+end
+
+---Release the output window *and* its buffer.
+---
+---`close` deliberately keeps the buffer so the recorded history survives
+---reopening; teardown has to drop it explicitly.
+function M.destroy()
+  M.close()
+  window.delete_buffer(bufnr)
+  bufnr = nil
 end
 
 function M.toggle()

@@ -484,10 +484,17 @@ function M.preview_hunk()
   window.fit_float(winid, lines, { min_width = 40 })
   vim.wo[winid].cursorline = false
 
+  local unregister
   local function close()
+    if unregister then
+      unregister()
+      unregister = nil
+    end
     window.close(winid)
     window.delete_buffer(bufnr)
   end
+  unregister = require("gitui.ui.floats").register(close)
+
   for _, lhs in ipairs({ "q", "<Esc>" }) do
     vim.keymap.set("n", lhs, close, { buffer = bufnr, nowait = true, silent = true })
   end

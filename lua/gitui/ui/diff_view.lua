@@ -623,6 +623,9 @@ end
 ---@param repo GitRepository
 ---@param opts GitUIDiffOpenOpts
 function M.open(repo, opts)
+  -- The diff lands in the editor area, underneath anything floating.
+  require("gitui.ui.floats").close_all()
+
   local view = opts.view or config.options.diff.view
   if view == "split" and M.splittable(opts.spec, opts.path) then
     -- Only one presentation at a time; leaving the patch panel open behind the
@@ -842,6 +845,7 @@ end
 ---@param path string
 ---@param spec GitDiffSpec
 function M.open_side_by_side(repo, path, spec)
+  require("gitui.ui.floats").close_all()
   close_side_by_side()
 
   local left_rev, right_rev = split_revisions(spec)

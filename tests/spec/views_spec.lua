@@ -298,6 +298,149 @@ describe("views", function()
     end)
   end)
 
+  describe("float dismissal", function()
+    -- A float sits above the editor area, so opening a diff or a file from one
+    -- used to put the result underneath the list that launched it: the user
+    -- asks to see something and nothing appears to happen.
+    local panel_lib = require("gitui.ui.panel")
+    local floats = require("gitui.ui.floats")
+
+    ---A repository with two commits and an uncommitted change.
+    local function history_repo()
+      local dir = helper.init("floats")
+      helper.write(dir, "a.lua", "alpha\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "first commit")
+      helper.write(dir, "a.lua", "ALPHA\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "second commit")
+      helper.write(dir, "a.lua", "ALPHA!\n")
+      local repo = activate(dir)
+      sync(repo)
+      return dir, repo
+    end
+
+    ---@return string[] filetypes of every floating window on screen
+    local function open_floats()
+      local out = {}
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.api.nvim_win_get_config(winid).relative ~= "" then
+          out[#out + 1] = vim.bo[vim.api.nvim_win_get_buf(winid)].filetype
+        end
+      end
+      table.sort(out)
+      return out
+    end
+
+    local function open_history(repo)
+      require("gitui.ui.log").open(repo, {})
+      local panel = panel_lib.get("log")
+      t.wait_for(function()
+        return panel:is_open() and panel.canvas ~= nil and panel.canvas:find(function(item)
+          return item.kind == "commit"
+        end) ~= nil
+      end, "the history never rendered")
+      return panel
+    end
+
+    after_each(function()
+      floats.close_all()
+    end)
+
+    it("replaces the history with the commit details rather than stacking", function()
+      local _, repo = history_repo()
+      local panel = open_history(repo)
+
+      panel:focus()
+      panel:set_cursor(panel.canvas:find(function(item)
+        return item.kind == "commit"
+      end))
+      vim.cmd("normal \13") -- <CR>
+      vim.wait(400)
+
+      assert.is_false(panel:is_open(), "the history should stand aside for the details")
+      assert.same({ "gitui-commit-details" }, open_floats())
+    end)
+
+    it("dismisses the history when a diff is opened from it", function()
+      local _, repo = history_repo()
+      local panel = open_history(repo)
+
+      panel:focus()
+      panel:set_cursor(panel.canvas:find(function(item)
+        return item.kind == "commit"
+      end))
+      vim.cmd("normal d")
+
+      t.wait_for(function()
+        return panel_lib.get("diff"):is_open()
+      end, "the diff never opened")
+      vim.wait(200)
+
+      assert.same({}, open_floats(), "nothing should be covering the diff")
+      assert.is_false(panel:is_open())
+    end)
+
+    it("dismisses a float when a file is opened in the editor area", function()
+      local dir, repo = history_repo()
+      local panel = open_history(repo)
+      assert.is_true(panel:is_open())
+
+      require("gitui.ui.window").open_file(dir .. "/a.lua", {})
+      vim.wait(300)
+
+      assert.same({}, open_floats(), "the float should not cover the file")
+      assert.is_false(panel:is_open())
+    end)
+
+    it("keeps only one float panel open at a time", function()
+      local _, repo = history_repo()
+
+      require("gitui.ui.branches").open(repo)
+      t.wait_for(function()
+        return panel_lib.get("branches"):is_open()
+      end, "branches never opened")
+
+      require("gitui.ui.log").open(repo, {})
+      t.wait_for(function()
+        return panel_lib.get("log"):is_open()
+      end, "history never opened")
+      vim.wait(200)
+
+      assert.is_false(panel_lib.get("branches"):is_open(), "branches should stand aside")
+      assert.same({ "gitui-log" }, open_floats())
+    end)
+
+    it("dismisses help and the output window too", function()
+      local _, repo = history_repo()
+
+      require("gitui.ui.help").show("source_control")
+      require("gitui.ui.output").store("git push", "some output", true)
+      require("gitui.ui.output").open({ focus = false })
+      vim.wait(200)
+      assert.is_true(#open_floats() > 0, "the floats should be on screen to begin with")
+
+      require("gitui.ui.diff_view").open(repo, { path = "a.lua", spec = { kind = "worktree" } })
+      t.wait_for(function()
+        return panel_lib.get("diff"):is_open()
+      end, "the diff never opened")
+      vim.wait(200)
+
+      assert.same({}, open_floats(), "help and output should be dismissed")
+    end)
+
+    it("does not recurse when a closer opens something", function()
+      -- A registered closer that itself triggers a dismissal must not loop.
+      local calls = 0
+      floats.register(function()
+        calls = calls + 1
+        floats.close_all()
+      end)
+      floats.close_all()
+      assert.equals(1, calls)
+    end)
+  end)
+
   describe("blame", function()
     local blame = require("gitui.ui.blame")
 

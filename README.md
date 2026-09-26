@@ -187,6 +187,11 @@ require("gitui").setup({ prefix = "<leader>gui" })
 diff hands your editor window back with the buffer that was in it — gitui
 borrows the window, it does not take it.
 
+Floating views get out of the way on their own. Opening a diff, a file or a
+commit from the history dismisses the float that launched it, so the thing you
+asked for is never hidden underneath it, and only one gitui float is ever on
+screen at a time.
+
 Visual mode works in the panel: select several rows and press `s`, `u` or `x`.
 
 ### Diff view

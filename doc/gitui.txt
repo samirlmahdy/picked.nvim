@@ -291,6 +291,21 @@ included. Dismissing a diff hands your editor window back with the buffer that
 was in it: gitui borrows that window rather than taking it, so closing a diff
 never costs you a window (and never leaves the sidebar alone and stretched).
 
+                                                              *gitui-floats*
+Floating views dismiss themselves rather than waiting to be told. A float sits
+above the editor area, so a diff opened from the history list would otherwise
+appear *underneath* the list that launched it — the user asks to see something
+and nothing appears to happen.
+
+Anything that occupies the editor area — a diff, a file, a blame column —
+closes every gitui float first. Opening one float closes any other, so history,
+branches, stashes, commit details, help, the output window and contextual menus
+never stack; selecting a commit in the history replaces the list with the
+commit's details rather than covering it.
+
+Nothing else is affected: the Source Control sidebar is a split, not a float,
+and stays exactly where it is.
+
 Visual mode works: select rows and press `s`, `u` or `x`.
 
 DIFF VIEW                                                 *gitui-keymaps-diff*
@@ -310,7 +325,7 @@ taking <C-v> from a file buffer would cost blockwise visual mode — so
 
 LOG                                                        *gitui-keymaps-log*
 
-  <CR>          Commit details
+  <CR>          Commit details (replaces the list)
   d             Diff against the parent
   c  v          Cherry-pick / revert
   b  t          Create a branch / tag here

@@ -335,11 +335,18 @@ end
 ---@field col integer|nil
 ---@field exclude integer[]|nil  window ids that must not be reused
 ---@field focus boolean|nil  false returns the cursor to where it started
+---@field dismiss_floats boolean|nil  false keeps floats open (rarely wanted)
 
 ---@param opts GitUIOpenFileOpts|nil
 ---@return integer|nil winid
 function M.open_file(path, opts)
   opts = opts or {}
+
+  -- A float would sit on top of the file we are about to show.
+  if opts.dismiss_floats ~= false then
+    require("gitui.ui.floats").close_all()
+  end
+
   local path_util = require("gitui.utils.path")
   local target = path_util.to_os(path)
   local command = opts.cmd or "edit"

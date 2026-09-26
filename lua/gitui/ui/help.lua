@@ -175,8 +175,13 @@ local SECTIONS = {
 
 local winid = nil
 local bufnr = nil
+local unregister = nil
 
 function M.close()
+  if unregister then
+    unregister()
+    unregister = nil
+  end
   window.close(winid)
   window.delete_buffer(bufnr)
   winid = nil
@@ -218,6 +223,7 @@ function M.show(source)
   local title = group:gsub("_", " "):upper()
 
   bufnr = window.create_buffer({ name = "help", filetype = "gitui-help" })
+  unregister = require("gitui.ui.floats").register(M.close)
   local canvas = render.new({ width = 64 })
 
   canvas:blank()

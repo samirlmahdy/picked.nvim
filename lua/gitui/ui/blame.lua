@@ -644,10 +644,16 @@ function M.line()
     window.fit_float(float_winid, lines, { min_width = 40 })
     vim.wo[float_winid].cursorline = false
 
+    local unregister
     local function close()
+      if unregister then
+        unregister()
+        unregister = nil
+      end
       window.close(float_winid)
       window.delete_buffer(float_bufnr)
     end
+    unregister = require("gitui.ui.floats").register(close)
     for _, lhs in ipairs({ "q", "<Esc>" }) do
       vim.keymap.set("n", lhs, close, { buffer = float_bufnr, nowait = true, silent = true })
     end

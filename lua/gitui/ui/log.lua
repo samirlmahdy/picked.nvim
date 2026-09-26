@@ -192,6 +192,19 @@ function M.show_commit(repo, commit)
   local namespace = vim.api.nvim_create_namespace("gitui_commit_details")
   local canvas = render.new({ width = vim.api.nvim_win_get_width(winid) })
 
+  -- Registered so that opening a diff from here — or from anywhere — takes
+  -- this float down with it instead of leaving it on top.
+  local unregister
+  local function dismiss()
+    if unregister then
+      unregister()
+      unregister = nil
+    end
+    window.close(winid)
+    window.delete_buffer(bufnr)
+  end
+  unregister = require("gitui.ui.floats").register(dismiss)
+
   canvas:blank()
   canvas:row(nil):add("  "):add(commit.subject, "GitUITitle")
   if commit.body ~= "" then
@@ -272,10 +285,7 @@ function M.show_commit(repo, commit)
     canvas:apply(bufnr, namespace)
   end)
 
-  local function close()
-    window.close(winid)
-    window.delete_buffer(bufnr)
-  end
+  local close = dismiss
 
   local function map(lhs, handler)
     vim.keymap.set("n", lhs, handler, { buffer = bufnr, nowait = true, silent = true })
@@ -328,13 +338,17 @@ local function commit_of(item)
   return item and item.commit or nil
 end
 
-actions.open = function(_, item)
+actions.open = function(self, item)
   if item and item.kind == "more" then
     return load(true)
   end
   local commit = commit_of(item)
   if commit and current then
-    M.show_commit(current.repo, commit)
+    local repo = current.repo
+    -- Replace the list rather than stacking a float on a float: the details
+    -- view is where the user is going, and the list behind it is only noise.
+    self:close()
+    M.show_commit(repo, commit)
   end
 end
 
