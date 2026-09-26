@@ -60,6 +60,11 @@ require("gitui").setup({
     --   false    nothing; `d` opens the diff on demand.
     preview = "auto",
     preview_delay = 120,
+
+    -- Which presentation a diff opens in. `<C-v>` toggles at any time, and
+    -- `]c`/`[c` jump between hunks in both.
+    view = "unified", -- "unified" | "split"
+    layout = "vertical", -- orientation of the split view
   },
 
   --- Inline signs ------------------------------------------------------------
@@ -80,6 +85,14 @@ require("gitui").setup({
     virtual_text = false, -- set true for always-on current-line blame
     virtual_text_delay = 400,
     date_format = "%Y-%m-%d",
+
+    -- The code and the blame column move together in both directions, using
+    -- Neovim's own 'scrollbind'/'cursorbind'.
+    sync_cursor = true,
+    -- Light up every line of the current commit, in both panes.
+    highlight_block = true,
+    -- One colour per commit in the blame column.
+    color_commits = true,
   },
 
   --- History -----------------------------------------------------------------

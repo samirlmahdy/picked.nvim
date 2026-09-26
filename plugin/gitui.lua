@@ -69,6 +69,10 @@ end, {
   desc = "Diff the current file (! opens the side-by-side view)",
 })
 
+command("GitUIDiffView", function()
+  gitui().toggle_diff_view()
+end, { desc = "Toggle the diff between the unified patch and side-by-side" })
+
 command("GitUILog", function(args)
   gitui().log({ all = args.bang })
 end, { bang = true, desc = "Commit history (! includes every ref)" })

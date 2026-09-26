@@ -301,11 +301,20 @@ function M.diff(opts)
     path = current_relative_path(repo)
   end
 
-  if opts.split and path then
-    return require("gitui.ui.diff_view").open_side_by_side(repo, path, spec)
-  end
+  require("gitui.ui.diff_view").open(repo, {
+    path = path,
+    spec = spec,
+    view = opts.split and "split" or nil,
+  })
+end
 
-  require("gitui.ui.diff_view").open(repo, { path = path, spec = spec })
+---Switch the open diff between the unified patch and the side-by-side view.
+---
+---Works from either pane of the split, including the one showing your real
+---file, where gitui deliberately installs no mappings.
+function M.toggle_diff_view()
+  ensure_setup()
+  require("gitui.ui.diff_view").toggle_view()
 end
 
 ---Open the commit editor.

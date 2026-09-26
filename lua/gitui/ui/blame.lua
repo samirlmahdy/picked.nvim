@@ -29,12 +29,17 @@ local M = {}
 ---@field blame GitBlameResult|nil
 ---@field revision string|nil
 ---@field augroup integer
+---@field commit_colors table<string, integer>|nil  oid -> palette index
 
 ---@type GitUIBlameSession|nil
 local session = nil
 
 local namespace = vim.api.nvim_create_namespace("gitui_blame")
 local virtual_namespace = vim.api.nvim_create_namespace("gitui_blame_virtual")
+-- Correlation marks live in their own namespace because they are painted on
+-- the *user's* file buffer as well as ours, and must be removable without
+-- touching anything else.
+local sync_namespace = vim.api.nvim_create_namespace("gitui_blame_sync")
 
 --- The blame column --------------------------------------------------------------
 
@@ -55,6 +60,13 @@ local function draw(current)
 
   local line_count = vim.api.nvim_buf_line_count(current.file_bufnr)
   local previous_oid = nil
+  local highlights = require("gitui.ui.highlights")
+  local color_commits = config.options.blame.color_commits
+
+  -- A stable colour per commit, assigned in the order commits first appear so
+  -- the palette is deterministic for a given file.
+  current.commit_colors = {}
+  local next_color = 0
 
   for lnum = 1, line_count do
     local entry = blame.lines[lnum]
@@ -67,6 +79,14 @@ local function draw(current)
       row:add(" not committed yet", "GitUIDim")
     else
       local commit = entry.commit
+
+      if not current.commit_colors[commit.oid] then
+        next_color = next_color + 1
+        current.commit_colors[commit.oid] = next_color
+      end
+      local hash_hl = color_commits and highlights.blame_commit(current.commit_colors[commit.oid])
+        or "GitUIBlameHash"
+
       -- Repeating the same commit on every line of a block is noise; showing
       -- it once per run makes the block structure visible instead.
       local repeated = commit.oid == previous_oid
@@ -76,7 +96,7 @@ local function draw(current)
         row:add(" " .. text_util.pad("", 14), "GitUIDim")
       else
         row:add(" ")
-        row:add(commit.short, "GitUIBlameHash", "inspect")
+        row:add(commit.short, hash_hl, "inspect")
         row:add(" ")
         row:add(os.date(config.options.blame.date_format, commit.author_time), "GitUIBlameDate", "inspect")
         row:add(" ")
@@ -89,21 +109,129 @@ local function draw(current)
   canvas:apply(current.bufnr, namespace)
 end
 
----Keep the blame column and the file scrolled together.
+--- Correlation ------------------------------------------------------------------
+
+---Range of contiguous lines sharing the commit of `lnum`.
 ---@param current GitUIBlameSession
-local function sync_scroll(current)
+---@param lnum integer
+---@return integer first, integer last, string|nil oid
+local function commit_block(current, lnum)
+  local blame = current.blame
+  local entry = blame and blame.lines[lnum]
+  if not entry then
+    return lnum, lnum, nil
+  end
+
+  local oid = entry.commit.oid
+  local first, last = lnum, lnum
+  while blame.lines[first - 1] and blame.lines[first - 1].commit.oid == oid do
+    first = first - 1
+  end
+  while blame.lines[last + 1] and blame.lines[last + 1].commit.oid == oid do
+    last = last + 1
+  end
+  return first, last, oid
+end
+
+---Paint the current line, and the block it belongs to, in both panes.
+---
+---Only the lines actually on screen are marked. A commit can own thousands of
+---lines, and marking them all would cost more than it shows.
+---@param current GitUIBlameSession
+---@param lnum integer
+local function highlight_correlation(current, lnum)
+  for _, bufnr in ipairs({ current.bufnr, current.file_bufnr }) do
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_buf_clear_namespace(bufnr, sync_namespace, 0, -1)
+    end
+  end
+
+  local first, last = lnum, lnum
+  if config.options.blame.highlight_block then
+    first, last = commit_block(current, lnum)
+  end
+
+  local panes = {
+    { winid = current.winid, bufnr = current.bufnr },
+    { winid = current.file_winid, bufnr = current.file_bufnr },
+  }
+
+  for _, pane in ipairs(panes) do
+    if vim.api.nvim_win_is_valid(pane.winid) and vim.api.nvim_buf_is_valid(pane.bufnr) then
+      local count = vim.api.nvim_buf_line_count(pane.bufnr)
+      local top, bottom = 1, count
+      vim.api.nvim_win_call(pane.winid, function()
+        top = math.max(1, vim.fn.line("w0"))
+        bottom = math.min(count, vim.fn.line("w$"))
+      end)
+
+      for line = math.max(first, top), math.min(last, bottom) do
+        pcall(vim.api.nvim_buf_set_extmark, pane.bufnr, sync_namespace, line - 1, 0, {
+          line_hl_group = "GitUIBlameBlock",
+          priority = 100,
+        })
+      end
+
+      -- The current line sits on top of the block so it stays distinguishable.
+      if lnum >= 1 and lnum <= count then
+        pcall(vim.api.nvim_buf_set_extmark, pane.bufnr, sync_namespace, lnum - 1, 0, {
+          line_hl_group = "GitUIBlameCurrentLine",
+          priority = 101,
+        })
+      end
+    end
+  end
+end
+
+---Bind the two panes so they scroll and move the cursor together.
+---
+---Neovim's own 'scrollbind' and 'cursorbind' do this natively and in both
+---directions, which is strictly better than emulating it: mouse wheels,
+---<C-e>/<C-y>, `zz`, `H`/`L`, search jumps and folds are all carried across
+---without gitui having to know about any of them.
+---
+---The binds are established only once the blame column holds one row per file
+---line; binding a placeholder buffer would lock in the wrong offset.
+---@param current GitUIBlameSession
+---@param enabled boolean
+local function set_binds(current, enabled)
+  for _, winid in ipairs({ current.winid, current.file_winid }) do
+    if vim.api.nvim_win_is_valid(winid) then
+      pcall(function()
+        vim.wo[winid].scrollbind = enabled
+        vim.wo[winid].cursorbind = enabled
+      end)
+    end
+  end
+end
+
+---Align both panes on `lnum` and re-establish the bind from there.
+---@param current GitUIBlameSession
+---@param lnum integer|nil
+local function realign(current, lnum)
   if not (vim.api.nvim_win_is_valid(current.winid) and vim.api.nvim_win_is_valid(current.file_winid)) then
     return
   end
-  local cursor = vim.api.nvim_win_get_cursor(current.file_winid)
-  local count = vim.api.nvim_buf_line_count(current.bufnr)
-  pcall(vim.api.nvim_win_set_cursor, current.winid, { math.min(cursor[1], count), 0 })
 
-  -- Align the top line too, so the two panes never drift apart.
+  -- 'scrollbind' locks in the *offset* between the two windows at the moment
+  -- it is set, so the alignment has to be correct before it goes on.
+  set_binds(current, false)
+
+  lnum = lnum or vim.api.nvim_win_get_cursor(current.file_winid)[1]
+  local blame_count = vim.api.nvim_buf_line_count(current.bufnr)
+  local target = math.max(1, math.min(lnum, blame_count))
+
   local view = vim.api.nvim_win_call(current.file_winid, vim.fn.winsaveview)
+  pcall(vim.api.nvim_win_set_cursor, current.winid, { target, 0 })
   vim.api.nvim_win_call(current.winid, function()
-    vim.fn.winrestview({ topline = view.topline, lnum = math.min(cursor[1], count), leftcol = 0 })
+    vim.fn.winrestview({ topline = view.topline, lnum = target, leftcol = 0 })
   end)
+
+  if config.options.blame.sync_cursor then
+    set_binds(current, true)
+  end
+
+  highlight_correlation(current, target)
 end
 
 local function close_session()
@@ -113,13 +241,16 @@ local function close_session()
   end
   session = nil
 
+  set_binds(current, false)
   pcall(vim.api.nvim_del_augroup_by_id, current.augroup)
+
+  -- The file buffer belongs to the user; leave nothing of ours on it.
+  if vim.api.nvim_buf_is_valid(current.file_bufnr) then
+    vim.api.nvim_buf_clear_namespace(current.file_bufnr, sync_namespace, 0, -1)
+  end
+
   window.close(current.winid)
   window.delete_buffer(current.bufnr)
-
-  if vim.api.nvim_win_is_valid(current.file_winid) then
-    vim.wo[current.file_winid].scrollbind = false
-  end
 end
 
 ---@param current GitUIBlameSession
@@ -217,7 +348,9 @@ local function load(current)
     end
     current.blame = blame
     draw(current)
-    sync_scroll(current)
+    -- The column now has one row per file line, so the panes can be aligned
+    -- and bound together.
+    realign(current)
   end)
 end
 
@@ -267,12 +400,24 @@ function M.open(repo, path, opts)
 
   install_keymaps(session)
 
-  vim.api.nvim_create_autocmd({ "CursorMoved", "WinScrolled" }, {
+  -- 'cursorbind' already moves the other pane; this only repaints the
+  -- correlation highlight, and it must fire from *either* pane so moving in
+  -- the blame column lights up the code and vice versa.
+  vim.api.nvim_create_autocmd({ "CursorMoved", "WinScrolled", "WinEnter" }, {
     group = augroup,
     callback = function()
-      if session and vim.api.nvim_get_current_win() == session.file_winid then
-        sync_scroll(session)
+      local current = session
+      if not current then
+        return
       end
+      local winid = vim.api.nvim_get_current_win()
+      if winid ~= current.winid and winid ~= current.file_winid then
+        return
+      end
+      if not vim.api.nvim_win_is_valid(winid) then
+        return
+      end
+      highlight_correlation(current, vim.api.nvim_win_get_cursor(winid)[1])
     end,
   })
 

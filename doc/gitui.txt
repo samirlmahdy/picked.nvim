@@ -132,6 +132,12 @@ first use — but it is how configuration is applied.
                         changed file) or `staged` (HEAD vs index). With [!],
                         open the side-by-side view instead of the unified one.
 
+                                                              *:GitUIDiffView*
+:GitUIDiffView          Toggle the open diff between the unified patch and the
+                        side-by-side view. Works from either pane of the
+                        split, including the one showing your real file, where
+                        gitui installs no mappings of its own.
+
                                                                 *:GitUICommit*
 :GitUICommit[!] [msg]   Open the commit editor. With [msg], commit immediately
                         with that message. With [!], amend.
@@ -275,10 +281,16 @@ DIFF VIEW                                                 *gitui-keymaps-diff*
 
   s  u  x       Stage / unstage / discard the hunk
   s  x (visual) Stage / discard exactly the selected lines
-  ]c  [c        Next / previous hunk
+  ]c  [c        Next / previous hunk (in both presentations)
   ]f  [f        Next / previous file
-  <Tab>         Switch between the staged and unstaged view
+  <Tab>         Switch what is compared: HEAD<->index / index<->worktree
+  <C-v>         Switch presentation: unified patch <-> side by side
   <CR>          Open the real file at this line
+
+In the side-by-side view, `]c`/`[c`, folding and |do|/|dp| are Neovim's own
+diff-mode behaviour. gitui maps nothing on the pane showing your real file —
+taking <C-v> from a file buffer would cost blockwise visual mode — so
+|:GitUIDiffView| is the way back to the unified patch from that side.
 
 LOG                                                        *gitui-keymaps-log*
 
@@ -404,6 +416,9 @@ movement so holding `j` does not queue a diff per row.
       virtual_text_delay = 400,
       date_format = "%Y-%m-%d",
       ignore_whitespace = true,
+      sync_cursor = true,      -- both panes move together, both directions
+      highlight_block = true,  -- the commit's lines, lit in both panes
+      color_commits = true,    -- a colour per commit in the blame column
     }
 <
                                                         *gitui-config-remote*
@@ -486,8 +501,12 @@ Two presentations:
               selection both produce an exact patch.
 
   Side by side  Where reading happens. Built on Neovim's own |:diffthis|, so
-              folding, |]c|, |do| and |dp| behave normally. Open it with
-              `:GitUIDiff!`.
+              folding, |]c|, |do| and |dp| behave normally.
+
+`<C-v>` toggles between them, `:GitUIDiff!` opens straight into the split, and
+`diff.view` sets which one a diff opens in by default. `]c`/`[c` jump between
+hunks in both. `diff.layout` chooses whether the split is side by side or
+stacked. See |gitui-config-preview| and the `diff` options.
 
 The title always names both sides. There is no ambiguous "the diff": a file
 that is both staged and modified has two distinct comparisons, and `<Tab>`
@@ -504,10 +523,27 @@ with their line counts.
 
 BLAME                                                      *gitui-view-blame*
 
-`:GitUIBlame` opens a blame column beside the file, scroll-bound to it.
+`:GitUIBlame` opens a blame column beside the file. The two panes are bound
+together with Neovim's own 'scrollbind' and 'cursorbind', so they scroll and
+move the cursor together **in both directions** — moving in the blame column
+moves the code, and vice versa. Mouse wheels, <C-e>, `zz` and search jumps are
+all carried across, because none of it is emulated.
+
+The line under the cursor is highlighted in *both* panes, and so is every
+other line belonging to the same commit, which is what makes it obvious at a
+glance which block of code a blame entry accounts for. Each commit also gets
+its own colour in the blame column, so adjacent commits are distinguishable.
+
+Turn any of that off with `blame.sync_cursor`, `blame.highlight_block` and
+`blame.color_commits`.
+
 Repeated commits are drawn once per run so the block structure is visible.
 `R` re-blames the parent of the commit under the cursor, which walks a line's
 history backwards one rewrite at a time.
+
+The highlights use |GitUIBlameCurrentLine| and |GitUIBlameBlock|; the
+per-commit colours reuse the graph palette. Nothing is left on your file
+buffer when the view closes.
 
 `:GitUIBlameLine` toggles a lighter always-on variant: the current line's
 commit as virtual text.
@@ -734,6 +770,7 @@ Signs:
 
 Blame:
   GitUIBlame GitUIBlameVirtual GitUIBlameHash GitUIBlameAuthor GitUIBlameDate
+  GitUIBlameCurrentLine GitUIBlameBlock
 
 Conflicts:
   GitUIConflictOurs GitUIConflictTheirs GitUIConflictBase GitUIConflictMarker

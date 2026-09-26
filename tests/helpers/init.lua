@@ -56,6 +56,23 @@ function M.wait_for(predicate, message, timeout)
   assert(ok, message or "condition never became true")
 end
 
+---Run `fn` with the configuration temporarily replaced, then restore it.
+---
+---`config.setup` rebuilds the whole options table from defaults, so a test
+---that calls it directly would silently reconfigure every test that runs
+---afterwards. Anything touching configuration must go through here.
+---@param opts table  passed to `config.setup`
+---@param fn fun(merged: table)
+function M.with_config(opts, fn)
+  local config = require("gitui.config")
+  local saved = vim.deepcopy(config.options)
+  local ok, err = pcall(fn, config.setup(opts))
+  config.options = saved
+  if not ok then
+    error(err, 0)
+  end
+end
+
 ---Answer `vim.ui.input` automatically.
 ---
 ---The default implementation blocks on `vim.fn.input`, which would hang a

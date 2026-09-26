@@ -76,6 +76,11 @@ local groups = {
   GitUIBlameHash = { link = "Identifier" },
   GitUIBlameAuthor = { link = "Constant" },
   GitUIBlameDate = { link = "Comment" },
+  -- The current line, drawn in *both* panes so the code and its blame stay
+  -- visually tied together even though only one of them has focus.
+  GitUIBlameCurrentLine = { link = "CursorLine" },
+  -- Every line belonging to the same commit as the current one.
+  GitUIBlameBlock = { link = "ColorColumn" },
 
   -- Conflicts.
   GitUIConflictOurs = { link = "DiffAdd" },
@@ -120,6 +125,17 @@ local GRAPH_LANES = 6
 ---@return string
 function M.graph(color)
   return "GitUIGraph" .. tostring(((color - 1) % GRAPH_LANES) + 1)
+end
+
+---Highlight group for a blame commit's colour index.
+---
+---Adjacent commits get different hues so the block structure of a file's
+---history is visible at a glance, rather than every row being one flat colour.
+---Reuses the graph palette, which colourschemes already style.
+---@param color integer
+---@return string
+function M.blame_commit(color)
+  return M.graph(color)
 end
 
 ---Highlight group for a single-letter git status code.

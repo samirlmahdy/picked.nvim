@@ -66,6 +66,7 @@ local DESCRIPTIONS = {
   prev_hunk = "Previous hunk",
   open_file = "Open the real file at this line",
   toggle_side = "Switch between staged and unstaged",
+  toggle_view = "Switch between the unified patch and side-by-side",
 
   -- Log
   cherry_pick = "Cherry-pick this commit",
@@ -142,7 +143,7 @@ local SECTIONS = {
       title = "Staging",
       actions = { "stage_hunk", "unstage_hunk", "discard_hunk", "stage_lines", "discard_lines" },
     },
-    { title = "Other", actions = { "toggle_side", "refresh", "help", "close" } },
+    { title = "Other", actions = { "toggle_side", "toggle_view", "refresh", "help", "close" } },
   },
   log = {
     { title = "Inspect", actions = { "open", "diff", "copy_hash", "open_remote", "load_more" } },

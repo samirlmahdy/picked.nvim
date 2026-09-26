@@ -24,7 +24,8 @@ with destructive operations by default.
 
 **Diffs**
 - Unified patch view with hunk and **line-level** staging
-- True side-by-side view using Neovim's own `:diffthis`
+- True side-by-side view using Neovim's own `:diffthis` — `<C-v>` toggles
+- `]c` / `[c` jump between hunks in **both** views
 - Every comparison names both sides — index ↔ working tree, HEAD ↔ index,
   HEAD ↔ working tree, commit ↔ parent, branch ↔ branch
 - Inline change signs in ordinary file buffers, with hunk actions
@@ -33,7 +34,8 @@ with destructive operations by default.
 - Paged commit log with a computed commit graph
 - Commit details: metadata, message, changed files with line counts
 - File history (following renames) and line history
-- Blame view scroll-bound to the file, plus current-line virtual text
+- Blame view bound to the file in both directions, with the current line and
+  its whole commit block highlighted in both panes and a colour per commit
 
 **Operations**
 - Commit in a real `gitcommit` buffer, amend, commit & push
@@ -182,8 +184,13 @@ Visual mode works in the panel: select several rows and press `s`, `u` or `x`.
 | `s` / `x` *(visual)* | Stage / discard exactly the selected lines |
 | `]c` / `[c` | Next / previous hunk |
 | `]f` / `[f` | Next / previous file |
-| `<Tab>` | Switch between the staged and unstaged view |
+| `<Tab>` | Switch what is compared (HEAD↔index / index↔worktree) |
+| `<C-v>` | Switch presentation (unified patch ↔ side-by-side) |
 | `<CR>` | Open the real file at this line |
+
+In the side-by-side view `]c` / `[c` are Neovim's own diff motions, so folding
+and `do` / `dp` work too. gitui installs no mappings on your real file buffer
+there — `:GitUIDiffView` returns to the unified patch from either pane.
 
 ### Conflicts
 
@@ -204,6 +211,7 @@ Visual mode works in the panel: select several rows and press `s`, `u` or `x`.
 | `:GitUIOpen`, `:GitUIFocus`, `:GitUIClose` | Open / focus / close |
 | `:GitUIRefresh[!]` | Re-read state (`!` refreshes every repository) |
 | `:GitUIDiff [all\|staged][!]` | Diff (`!` uses the side-by-side view) |
+| `:GitUIDiffView` | Toggle unified ↔ side-by-side |
 | `:GitUICommit[!] [message]` | Commit (`!` amends) |
 | `:GitUIPush[!]` | Push (`!` force-pushes with lease) |
 | `:GitUIPull`, `:GitUIFetch[!]` | Pull / fetch (`!` fetches all remotes) |
@@ -260,6 +268,8 @@ require("gitui").setup({
     --   false    nothing; `d` opens the diff on demand
     preview = "auto",
     preview_delay = 120,
+    view = "unified",         -- "unified" | "split"; <C-v> toggles
+    layout = "vertical",      -- orientation of the split view
   },
 
   signs = {
@@ -278,6 +288,9 @@ require("gitui").setup({
     virtual_text_delay = 400,
     date_format = "%Y-%m-%d",
     ignore_whitespace = true,
+    sync_cursor = true,       -- code and blame move together, both directions
+    highlight_block = true,   -- light up the commit's lines in both panes
+    color_commits = true,     -- a colour per commit in the blame column
   },
 
   log = { page_size = 256, graph = true },

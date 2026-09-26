@@ -157,6 +157,316 @@ describe("views", function()
     end)
   end)
 
+  describe("diff view presentations", function()
+    local diff_view = require("gitui.ui.diff_view")
+    local config = require("gitui.config")
+
+    ---A file with three well-separated changes, so hunk jumping is meaningful.
+    local function three_hunk_repo(label)
+      local dir = helper.init(label)
+      local base = {}
+      for index = 1, 30 do
+        base[index] = "line " .. index
+      end
+      local content = table.concat(base, "\n") .. "\n"
+      helper.write(dir, "f.lua", content)
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      helper.write(
+        dir,
+        "f.lua",
+        content:gsub("line 3\n", "THREE\n"):gsub("line 15\n", "FIFTEEN\n"):gsub("line 27\n", "TWENTYSEVEN\n")
+      )
+      local repo = activate(dir)
+      sync(repo)
+      return dir, repo
+    end
+
+    local function open_unified(repo)
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "unified" })
+      local panel = require("gitui.ui.panel").get("diff")
+      t.wait_for(function()
+        return panel.canvas ~= nil and text_of(panel.bufnr):find("@@", 1, true) ~= nil
+      end, "the unified diff never rendered")
+      return panel
+    end
+
+    after_each(function()
+      diff_view.close_side_by_side()
+      diff_view.close()
+    end)
+
+    it("jumps between hunks in the unified view", function()
+      local _, repo = three_hunk_repo("hunks-unified")
+      local panel = open_unified(repo)
+
+      local headers = panel.canvas:find_all(function(item)
+        return item.kind == "hunk"
+      end)
+      assert.equals(3, #headers)
+
+      panel:focus()
+      panel:set_cursor(1)
+
+      local visited = {}
+      for _ = 1, 3 do
+        vim.cmd("normal ]c")
+        visited[#visited + 1] = panel:cursor_line()
+      end
+      assert.is_true(visited[1] < visited[2], "]c should move forward")
+      assert.is_true(visited[2] < visited[3], "]c should keep moving forward")
+
+      vim.cmd("normal [c")
+      assert.equals(visited[2], panel:cursor_line(), "[c should move back one hunk")
+    end)
+
+    it("switches to the side-by-side view and back", function()
+      local _, repo = three_hunk_repo("view-toggle")
+      local panel = open_unified(repo)
+
+      panel:focus()
+      diff_view.toggle_view()
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split view never opened")
+
+      -- The two presentations are mutually exclusive.
+      assert.is_false(panel:is_open(), "the unified panel should close behind the split")
+
+      local diff_windows = vim.tbl_filter(function(winid)
+        return vim.wo[winid].diff
+      end, vim.api.nvim_tabpage_list_wins(0))
+      assert.equals(2, #diff_windows, "the split view needs exactly two diff windows")
+
+      -- Native diff mode means ]c works without gitui doing anything.
+      vim.api.nvim_set_current_win(diff_windows[1])
+      vim.cmd("normal! gg")
+      local first = vim.api.nvim_win_get_cursor(0)[1]
+      vim.cmd("normal! ]c")
+      assert.is_true(vim.api.nvim_win_get_cursor(0)[1] > first, "]c should jump in diff mode")
+
+      diff_view.toggle_view()
+      t.wait_for(function()
+        return not diff_view.split_is_open()
+      end, "the split view never closed")
+      t.wait_for(function()
+        return require("gitui.ui.panel").get("diff"):is_open()
+      end, "the unified view never came back")
+    end)
+
+    it("honours the configured split orientation", function()
+      local _, repo = three_hunk_repo("view-layout")
+      local previous = config.options.diff.layout
+      config.options.diff.layout = "horizontal"
+
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split view never opened")
+
+      local rows = {}
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.wo[winid].diff then
+          rows[#rows + 1] = vim.api.nvim_win_get_position(winid)[1]
+        end
+      end
+      assert.equals(2, #rows)
+      assert.is_true(rows[1] ~= rows[2], "horizontal layout must stack the two sides")
+
+      config.options.diff.layout = previous
+    end)
+
+    it("falls back to the unified patch when there is nothing to split", function()
+      local _, repo = three_hunk_repo("view-fallback")
+      -- A whole-tree diff has no single file, so no side-by-side form.
+      diff_view.open(repo, { spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return require("gitui.ui.panel").get("diff"):is_open()
+      end, "the unified fallback never opened")
+      assert.is_false(diff_view.split_is_open())
+    end)
+
+    it("rejects an invalid view or layout instead of breaking", function()
+      t.with_config({
+        diff = { view = "nonsense", layout = "diagonal" },
+        default_keymaps = false,
+        log_level = "off",
+      }, function(merged)
+        assert.equals("unified", merged.diff.view)
+        assert.equals("vertical", merged.diff.layout)
+      end)
+    end)
+  end)
+
+  describe("blame", function()
+    local blame = require("gitui.ui.blame")
+
+    ---A file whose lines come from three different commits.
+    local function layered_repo()
+      local dir = helper.init("blame-panes")
+      helper.write(dir, "f.lua", "one\ntwo\nthree\nfour\nfive\nsix\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "first")
+      helper.write(dir, "f.lua", "one\ntwo\nTHREE\nFOUR\nfive\nsix\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "second")
+      helper.write(dir, "f.lua", "one\ntwo\nTHREE\nFOUR\nfive\nSIX\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "third")
+      return dir, activate(dir)
+    end
+
+    ---@return integer file_win, integer blame_win
+    local function panes()
+      local file_win, blame_win
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local bufnr = vim.api.nvim_win_get_buf(winid)
+        if vim.bo[bufnr].filetype == "gitui-blame" then
+          blame_win = winid
+        elseif vim.api.nvim_buf_get_name(bufnr):match("f%.lua$") then
+          file_win = winid
+        end
+      end
+      return assert(file_win, "no pane is showing f.lua"), assert(blame_win, "no blame pane")
+    end
+
+    ---Move the cursor the way a user does.
+    ---
+    ---`nvim_win_set_cursor` deliberately bypasses 'cursorbind' — it is an API
+    ---call, not a motion — so a real `G` is required to exercise the binding
+    ---at all. CursorMoved additionally does not fire under --headless without
+    ---a UI, so the event a keypress would produce is raised explicitly.
+    local function move_to(winid, lnum)
+      vim.api.nvim_set_current_win(winid)
+      vim.cmd("normal! " .. lnum .. "G")
+      vim.api.nvim_exec_autocmds("CursorMoved", { buffer = vim.api.nvim_win_get_buf(winid) })
+      vim.wait(80)
+    end
+
+    after_each(function()
+      blame.close()
+    end)
+
+    it("binds both panes so they move together in either direction", function()
+      local _, repo = layered_repo()
+      blame.open(repo, "f.lua")
+      t.wait_for(function()
+        return blame.is_open()
+      end, "blame never opened")
+      vim.wait(400)
+
+      local file_win, blame_win = panes()
+
+      for _, winid in ipairs({ file_win, blame_win }) do
+        assert.is_true(vim.wo[winid].scrollbind, "scrollbind should be on in both panes")
+        assert.is_true(vim.wo[winid].cursorbind, "cursorbind should be on in both panes")
+      end
+
+      -- Moving in the file moves the blame column…
+      move_to(file_win, 5)
+      assert.equals(5, vim.api.nvim_win_get_cursor(blame_win)[1])
+
+      -- …and moving in the blame column moves the file. This direction did not
+      -- work before: the sync only ever read from the file window.
+      move_to(blame_win, 2)
+      assert.equals(2, vim.api.nvim_win_get_cursor(file_win)[1])
+    end)
+
+    it("highlights the current line and its commit block in both panes", function()
+      local _, repo = layered_repo()
+      blame.open(repo, "f.lua")
+      t.wait_for(function()
+        return blame.is_open()
+      end, "blame never opened")
+      vim.wait(400)
+
+      local file_win, blame_win = panes()
+      local ns = vim.api.nvim_create_namespace("gitui_blame_sync")
+
+      local function marks(winid)
+        local bufnr = vim.api.nvim_win_get_buf(winid)
+        local out = {}
+        for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })) do
+          out[#out + 1] = ("%d:%s"):format(mark[2] + 1, mark[4].line_hl_group)
+        end
+        table.sort(out)
+        return out
+      end
+
+      -- Lines 3 and 4 share the "second" commit, so selecting either should
+      -- light up both, in both panes.
+      move_to(file_win, 3)
+
+      local in_file, in_blame = marks(file_win), marks(blame_win)
+      assert.is_true(#in_file > 0, "the file pane should be highlighted")
+      assert.same(in_file, in_blame, "both panes must carry the same highlight")
+
+      local has_current, block_lines = false, {}
+      for _, entry in ipairs(in_file) do
+        local lnum, group = entry:match("^(%d+):(.+)$")
+        if group == "GitUIBlameCurrentLine" then
+          has_current = true
+          assert.equals("3", lnum)
+        else
+          block_lines[#block_lines + 1] = lnum
+        end
+      end
+      assert.is_true(has_current, "the current line must be highlighted")
+      assert.same({ "3", "4" }, block_lines, "the whole commit block must be highlighted")
+    end)
+
+    it("gives each commit its own colour in the blame column", function()
+      local _, repo = layered_repo()
+      blame.open(repo, "f.lua")
+      t.wait_for(function()
+        return blame.is_open()
+      end, "blame never opened")
+      vim.wait(400)
+
+      local _, blame_win = panes()
+      local bufnr = vim.api.nvim_win_get_buf(blame_win)
+      local ns = vim.api.nvim_create_namespace("gitui_blame")
+
+      local groups = {}
+      for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })) do
+        local group = mark[4].hl_group
+        if group and group:match("^GitUIGraph%d$") then
+          groups[mark[2] + 1] = group
+        end
+      end
+
+      -- Three commits, three distinct colours; line 1 and line 5 are the same
+      -- commit and must therefore share one.
+      local distinct = {}
+      for _, group in pairs(groups) do
+        distinct[group] = true
+      end
+      assert.is_true(vim.tbl_count(distinct) >= 3, "each commit should get its own colour")
+      assert.is_not_nil(groups[1])
+      assert.equals(groups[1], groups[5], "the same commit must keep the same colour")
+    end)
+
+    it("leaves nothing behind on the user's file buffer", function()
+      local dir, repo = layered_repo()
+      blame.open(repo, "f.lua")
+      t.wait_for(function()
+        return blame.is_open()
+      end, "blame never opened")
+      vim.wait(400)
+
+      local file_win = panes()
+      local file_bufnr = vim.api.nvim_win_get_buf(file_win)
+      blame.close()
+      vim.wait(150)
+
+      local ns = vim.api.nvim_create_namespace("gitui_blame_sync")
+      assert.equals(0, #vim.api.nvim_buf_get_extmarks(file_bufnr, ns, 0, -1, {}))
+      assert.is_false(vim.wo[file_win].scrollbind, "scrollbind must be released")
+      assert.is_false(vim.wo[file_win].cursorbind, "cursorbind must be released")
+      local _ = dir
+    end)
+  end)
+
   describe("commit editor", function()
     local commit = require("gitui.ui.commit")
 

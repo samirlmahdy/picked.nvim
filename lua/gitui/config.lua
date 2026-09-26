@@ -100,7 +100,22 @@ local defaults = {
     --- git diff algorithm: myers | minimal | patience | histogram
     algorithm = "histogram",
     ignore_whitespace = false,
-    --- "vertical" places the two panes side by side, "horizontal" stacks them.
+    --- Which presentation a diff opens in.
+    ---
+    ---   "unified"  one patch buffer with +/- lines. This is where staging
+    ---              happens: hunk and line-level staging need a patch.
+    ---   "split"    side-by-side, built on Neovim's own |:diffthis|, so
+    ---              folding, ]c/[c and do/dp behave exactly as they do in any
+    ---              other diff. A reading view.
+    ---
+    --- `<C-v>` toggles between them at any time, and `]c`/`[c` jump between
+    --- hunks in both.
+    ---@type "unified"|"split"
+    view = "unified",
+
+    --- Orientation of the split view: "vertical" places the two sides beside
+    --- each other, "horizontal" stacks them.
+    ---@type "vertical"|"horizontal"
     layout = "vertical",
 
     --- What moving the cursor onto a file in the Source Control panel does.
@@ -155,6 +170,21 @@ local defaults = {
     date_format = "%Y-%m-%d",
     --- Ignore whitespace-only changes when blaming.
     ignore_whitespace = true,
+
+    --- Keep the code and the blame column scrolled and cursored together, in
+    --- both directions. Implemented with Neovim's own 'scrollbind' and
+    --- 'cursorbind', so mouse wheels, <C-e>, `zz` and search jumps are all
+    --- carried across without gitui having to emulate them.
+    sync_cursor = true,
+
+    --- Highlight every line that belongs to the same commit as the line under
+    --- the cursor, in *both* panes. This is what makes it obvious which block
+    --- of code a blame entry accounts for.
+    highlight_block = true,
+
+    --- Give each commit its own colour in the blame column, so adjacent
+    --- commits are distinguishable at a glance.
+    color_commits = true,
   },
 
   --- Commit history.
@@ -301,7 +331,10 @@ local defaults = {
       next_file = "]f",
       prev_file = "[f",
       open_file = "<CR>",
+      --- Switch between what is being compared: HEAD↔index and index↔worktree.
       toggle_side = "<Tab>",
+      --- Switch between the unified patch and the side-by-side view.
+      toggle_view = "<C-v>",
     },
 
     log = {
@@ -462,6 +495,16 @@ local function validate(opts)
   if opts.icons ~= true and opts.icons ~= false and opts.icons ~= "auto" then
     bad("icons", opts.icons, "true, false or 'auto'")
     opts.icons = defaults.icons
+  end
+
+  if opts.diff.view ~= "unified" and opts.diff.view ~= "split" then
+    bad("diff.view", opts.diff.view, "'unified' or 'split'")
+    opts.diff.view = defaults.diff.view
+  end
+
+  if opts.diff.layout ~= "vertical" and opts.diff.layout ~= "horizontal" then
+    bad("diff.layout", opts.diff.layout, "'vertical' or 'horizontal'")
+    opts.diff.layout = defaults.diff.layout
   end
 
   -- `true` has always meant "preview the entry under the cursor", so keep it

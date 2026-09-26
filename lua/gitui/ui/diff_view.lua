@@ -431,12 +431,12 @@ actions.refresh = function()
   M.reload()
 end
 
-actions.split = function()
-  if not current or not current.path then
-    return notify.warn("Open a single file's diff first")
-  end
-  M.open_side_by_side(current.repo, current.path, current.spec)
+actions.toggle_view = function()
+  M.toggle_view()
 end
+
+-- Kept as an alias so `:GitUIDiff!` and the context menu keep working.
+actions.split = actions.toggle_view
 
 ---@type table<string, fun(panel: GitUIPanel, first: integer, last: integer)>
 local visual_actions = {}
@@ -490,8 +490,9 @@ local function get_panel()
       { key = "stage_hunk", label = "stage hunk" },
       { key = "unstage_hunk", label = "unstage" },
       { key = "discard_hunk", label = "discard" },
-      { key = "next_hunk", label = "next" },
-      { key = "open_file", label = "open file" },
+      { key = "next_hunk", label = "next hunk" },
+      { key = "toggle_view", label = "split view" },
+      { key = "help", label = "help" },
     },
     context_menu = function(panel_instance, item)
       if not item or not item.diff then
@@ -537,7 +538,8 @@ local function get_panel()
       }
       entries[#entries + 1] = {
         label = "Side-by-side view",
-        action = actions.split,
+        key = panel_instance:keys_for("toggle_view")[1],
+        action = actions.toggle_view,
       }
       return entries
     end,
@@ -611,11 +613,38 @@ end
 ---@field entry GitFileEntry|nil
 ---@field from_panel GitUIPanel|nil
 ---@field focus boolean|nil
+---@field view "unified"|"split"|nil  defaults to `config.diff.view`
 
----Open the unified diff view.
+---Open a diff.
+---
+---Honours `config.diff.view`, falling back to the unified patch whenever the
+---side-by-side form does not apply — it shows one file at a time, so a
+---whole-tree diff has no split form.
 ---@param repo GitRepository
 ---@param opts GitUIDiffOpenOpts
 function M.open(repo, opts)
+  local view = opts.view or config.options.diff.view
+  if view == "split" and M.splittable(opts.spec, opts.path) then
+    -- Only one presentation at a time; leaving the patch panel open behind the
+    -- split would double the windows and confuse every subsequent toggle.
+    if panel and panel:is_open() then
+      panel:close()
+    end
+    current = {
+      repo = repo,
+      spec = opts.spec,
+      path = opts.path,
+      diffs = {},
+      loading = false,
+      entry = opts.entry,
+    }
+    return M.open_side_by_side(repo, opts.path, opts.spec)
+  end
+
+  if M.split_is_open() then
+    M.close_side_by_side()
+  end
+
   local instance = get_panel()
 
   current = {
@@ -735,32 +764,96 @@ local function blob_buffer(repo, path, rev, label, callback)
   end)
 end
 
+---Which revisions the two sides of a split view show.
+---@param spec GitDiffSpec
+---@return string|nil left, string|nil right  nil right means "the file on disk"
+local function split_revisions(spec)
+  if spec.kind == "worktree" then
+    return ":0", nil
+  elseif spec.kind == "index" then
+    return "HEAD", ":0"
+  elseif spec.kind == "head" then
+    return "HEAD", nil
+  elseif spec.kind == "commit" and spec.from then
+    return spec.from .. "^", spec.from
+  elseif spec.from then
+    return spec.from, spec.to
+  end
+  return nil, nil
+end
+
+---Can this comparison be shown side by side?
+---@param spec GitDiffSpec
+---@param path string|nil
+---@return boolean
+function M.splittable(spec, path)
+  if not path then
+    return false
+  end
+  local left = split_revisions(spec)
+  return left ~= nil
+end
+
+---Buffer-local keys for the two windows of a split view.
+---
+---`]c`/`[c` are Neovim's own diff-mode motions and need no help. What the
+---split view *does* need is a way back: without it, switching presentation is
+---a one-way door.
+---@param bufnr integer
+---@param context { repo: GitRepository, path: string, spec: GitDiffSpec }
+local function map_split_buffer(bufnr, context)
+  local keys = config.options.keymaps.diff
+
+  local function map(lhs, rhs, desc)
+    if not lhs then
+      return
+    end
+    for _, key in ipairs(type(lhs) == "table" and lhs or { lhs }) do
+      vim.keymap.set("n", key, rhs, {
+        buffer = bufnr,
+        nowait = true,
+        silent = true,
+        desc = "gitui: " .. desc,
+      })
+    end
+  end
+
+  map(keys.toggle_view, function()
+    M.close_side_by_side()
+    M.open(context.repo, { path = context.path, spec = context.spec, view = "unified" })
+  end, "unified view")
+
+  map(keys.toggle_side, function()
+    local next_kind = context.spec.kind == "worktree" and "index" or "worktree"
+    M.close_side_by_side()
+    M.open(context.repo, { path = context.path, spec = { kind = next_kind }, view = "split" })
+  end, "switch compared sides")
+
+  map("q", function()
+    M.close_side_by_side()
+  end, "close the split view")
+end
+
 ---Open a true side-by-side diff using Neovim's own diff mode.
 ---
----This is a reading view: `]c`, folding and `do`/`dp` all work because it is
----genuinely `:diffthis`, not an imitation of it.
+---This is a reading view: `]c`, `[c`, folding and `do`/`dp` all work because
+---it is genuinely `:diffthis`, not an imitation of it.
 ---@param repo GitRepository
 ---@param path string
 ---@param spec GitDiffSpec
 function M.open_side_by_side(repo, path, spec)
   close_side_by_side()
 
-  local left_rev, right_rev
-  if spec.kind == "worktree" then
-    left_rev, right_rev = ":0", nil -- right side is the file on disk
-  elseif spec.kind == "index" then
-    left_rev, right_rev = "HEAD", ":0"
-  elseif spec.kind == "head" then
-    left_rev, right_rev = "HEAD", nil
-  elseif spec.kind == "commit" and spec.from then
-    left_rev, right_rev = spec.from .. "^", spec.from
-  elseif spec.from then
-    left_rev, right_rev = spec.from, spec.to
-  else
-    return notify.warn("This comparison has no side-by-side form")
+  local left_rev, right_rev = split_revisions(spec)
+  if not left_rev then
+    return notify.warn("This comparison has no side-by-side form; showing the unified patch instead")
   end
 
   local left_label, right_label = diff_api.side_labels(spec)
+  local context = { repo = repo, path = path, spec = spec }
+  -- "vertical" puts the sides beside each other, which needs a `vsplit`;
+  -- "horizontal" stacks them.
+  local horizontal = config.options.diff.layout == "horizontal"
 
   blob_buffer(repo, path, left_rev, left_label, function(left_bufnr)
     if not left_bufnr then
@@ -778,16 +871,39 @@ function M.open_side_by_side(repo, path, spec)
       else
         vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), right_bufnr)
       end
+      local right_winid = vim.api.nvim_get_current_win()
       vim.cmd("diffthis")
+      -- The right pane is the user's real file buffer, kept editable on
+      -- purpose so `do`/`dp` work. gitui does not map keys on it — stealing
+      -- <C-v> from a file buffer would cost blockwise visual mode — so its
+      -- winbar names the command instead.
+      vim.wo[right_winid].winbar = (" %s   ]c/[c hunks   :GitUIDiffView unified "):format(right_label:upper())
 
-      vim.cmd("noautocmd leftabove vsplit")
-      vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), left_bufnr)
+      vim.cmd(horizontal and "noautocmd leftabove split" or "noautocmd leftabove vsplit")
+      local left_winid = vim.api.nvim_get_current_win()
+      vim.api.nvim_win_set_buf(left_winid, left_bufnr)
       vim.cmd("diffthis")
+      vim.wo[left_winid].winbar = (" %s   ]c/[c hunks   %s unified "):format(
+        left_label:upper(),
+        type(config.options.keymaps.diff.toggle_view) == "table"
+            and config.options.keymaps.diff.toggle_view[1]
+          or config.options.keymaps.diff.toggle_view
+      )
 
-      -- Returning to the right-hand (editable) side is what the user expects.
-      vim.cmd("wincmd l")
+      map_split_buffer(left_bufnr, context)
+      if not use_file then
+        map_split_buffer(right_bufnr, context)
+      end
 
-      notify.info(("Diff: %s ↔ %s"):format(left_label, right_label))
+      -- Land on the right-hand (newer, editable) side, at the first change.
+      vim.api.nvim_set_current_win(right_winid)
+      pcall(vim.cmd, "normal! gg")
+      pcall(vim.cmd, "normal! ]c")
+
+      notify.info(("%s ↔ %s   ]c/[c jump hunks   :GitUIDiffView returns to the unified patch"):format(
+        left_label,
+        right_label
+      ))
     end
 
     if right_rev then
@@ -802,10 +918,54 @@ function M.open_side_by_side(repo, path, spec)
   end)
 end
 
+---@return boolean
+function M.split_is_open()
+  return #diff_buffers > 0
+end
+
 ---Leave diff mode and drop the scratch buffers.
 function M.close_side_by_side()
-  vim.cmd("diffoff!")
+  if #diff_buffers == 0 then
+    return
+  end
+  -- `diffoff!` clears diff mode across the tab, including the window that is
+  -- about to show the file again.
+  pcall(vim.cmd, "diffoff!")
+  for _, bufnr in ipairs(diff_buffers) do
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      -- Close any window still showing a scratch side, so the layout returns
+      -- to what it was rather than leaving an empty split behind.
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.api.nvim_win_get_buf(winid) == bufnr and #vim.api.nvim_tabpage_list_wins(0) > 1 then
+          pcall(vim.api.nvim_win_close, winid, true)
+        end
+      end
+    end
+  end
   close_side_by_side()
+end
+
+---Switch the current diff between the unified patch and the side-by-side view.
+function M.toggle_view()
+  if M.split_is_open() then
+    local context = current
+    M.close_side_by_side()
+    if context and context.repo then
+      M.open(context.repo, { path = context.path, spec = context.spec, view = "unified" })
+    end
+    return
+  end
+
+  if not current then
+    return notify.warn("No diff is open")
+  end
+  if not M.splittable(current.spec, current.path) then
+    return notify.warn("The side-by-side view shows one file at a time; open a file's diff first")
+  end
+
+  local repo, path, spec = current.repo, current.path, current.spec
+  M.close()
+  M.open_side_by_side(repo, path, spec)
 end
 
 return M
