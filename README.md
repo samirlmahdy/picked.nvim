@@ -110,9 +110,15 @@ change any of the configuration below.
 
 1. Open a file inside a repository.
 2. `<leader>gs` opens the Source Control panel.
-3. `j`/`k` to move, `s` to stage, `u` to unstage, `d` to see the diff.
-4. `c` opens the commit editor; write a message and press `<C-s>` (or `:w`).
-5. `p` pushes. `?` shows every key, generated from *your* configuration.
+3. `j`/`k` to move. **Selecting a file shows its diff** — added and removed
+   lines with `+`/`-`, in green and red — while the cursor stays in the list.
+4. `s` stages, `u` unstages, `x` discards. In the diff, `s` stages one hunk,
+   or exactly the lines you select in visual mode.
+5. `c` opens the commit editor; write a message and press `<C-s>` (or `:w`).
+6. `p` pushes. `?` shows every key, generated from *your* configuration.
+
+If you would rather browse the list without diffs opening, set
+`diff = { preview = false }` and use `d` on demand.
 
 ---
 
@@ -151,7 +157,8 @@ change any of the configuration below.
 
 | Key | Action |
 | --- | --- |
-| `<CR>` | Open the file / expand the row |
+| *(cursor)* | Selecting a file shows its diff automatically |
+| `<CR>` | Open the file for editing / expand the row |
 | `s` / `u` / `x` | Stage / unstage / discard |
 | `S` / `U` | Stage all / unstage all |
 | `d` / `D` | Diff this entry / diff everything against HEAD |
@@ -247,7 +254,11 @@ require("gitui").setup({
     context = 3,
     algorithm = "histogram",
     ignore_whitespace = false,
-    preview = true,           -- follow the panel cursor in an open diff
+    -- What selecting a file in the panel does:
+    --   "auto"   open its diff in the editor area (VS Code behaviour)
+    --   "follow" only retarget a diff that is already open
+    --   false    nothing; `d` opens the diff on demand
+    preview = "auto",
     preview_delay = 120,
   },
 

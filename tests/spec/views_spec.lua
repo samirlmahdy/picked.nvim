@@ -48,6 +48,9 @@ describe("views", function()
     icons = false,
     hints = true,
     confirm = { discard = false, discard_hunk = false },
+    -- These tests drive the diff view directly; auto-preview would open one
+    -- behind their backs.
+    diff = { preview = false },
   })
 
   after_each(function()

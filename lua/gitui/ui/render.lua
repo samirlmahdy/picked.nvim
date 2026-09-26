@@ -326,24 +326,49 @@ function M.section_header(canvas, opts)
 end
 
 ---A one-line footer of "key description" pairs.
+---
+---When the list does not fit, entries are dropped from the middle rather than
+---the end: the last hint is conventionally `? help`, which is the route to
+---every action that did not fit, so losing it to truncation is the worst
+---possible outcome on the narrowest window.
 ---@param canvas GitUICanvas
 ---@param pairs_list { key: string, label: string }[]
 ---@param width integer
 function M.hint_footer(canvas, pairs_list, width)
-  local row = canvas:row({ kind = "hint" })
+  if #pairs_list == 0 then
+    return
+  end
+
+  local function size(entry, first)
+    return #entry.key + 1 + #entry.label + (first and 0 or 2)
+  end
+
+  local last = pairs_list[#pairs_list]
+  local reserved = #pairs_list > 1 and size(last, false) or 0
+
+  local shown = {}
   local used = 0
-  for index, entry in ipairs(pairs_list) do
-    local piece = #entry.key + 1 + #entry.label + (index > 1 and 2 or 0)
-    if used + piece > width then
+  for index = 1, #pairs_list - (reserved > 0 and 1 or 0) do
+    local entry = pairs_list[index]
+    local piece = size(entry, #shown == 0)
+    if used + piece + reserved > width then
       break
     end
+    shown[#shown + 1] = entry
+    used = used + piece
+  end
+  if reserved > 0 then
+    shown[#shown + 1] = last
+  end
+
+  local row = canvas:row({ kind = "hint" })
+  for index, entry in ipairs(shown) do
     if index > 1 then
       row:add("  ")
     end
     row:add(entry.key, "GitUIKey")
     row:add(" ")
     row:add(entry.label, "GitUIHint")
-    used = used + piece
   end
 end
 

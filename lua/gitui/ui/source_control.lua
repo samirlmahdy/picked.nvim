@@ -1005,14 +1005,17 @@ local function get_panel()
       { key = "commit", label = "commit" },
       { key = "help", label = "help" },
     },
-    on_cursor = function(self, item)
+    on_cursor = function(_, item)
       if not config.options.diff.preview then
         return
       end
-      -- Preview is intentionally passive: it only refreshes an already-open
-      -- diff view rather than opening one.
-      if item and item.kind == "file" and item.entry then
-        require("gitui.ui.diff_view").preview(item.entry, item.side)
+      -- Selecting a file shows its diff, the way VS Code does. `diff.preview`
+      -- decides whether that opens a view or only retargets an open one.
+      if item and item.kind == "file" and item.entry and not item.entry.conflicted then
+        local repo = active_repo()
+        if repo then
+          require("gitui.ui.diff_view").preview(repo, item.entry, item.side)
+        end
       end
     end,
   })

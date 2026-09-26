@@ -52,7 +52,13 @@ require("gitui").setup({
     context = 3,
     algorithm = "histogram",
     ignore_whitespace = false,
-    preview = true, -- an open diff follows the panel cursor
+
+    -- What selecting a file in the panel does:
+    --   "auto"   open its diff in the editor area, keeping the cursor in the
+    --            panel. This is the VS Code behaviour.
+    --   "follow" only retarget a diff that is already open.
+    --   false    nothing; `d` opens the diff on demand.
+    preview = "auto",
     preview_delay = 120,
   },
 

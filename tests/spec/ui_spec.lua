@@ -234,6 +234,139 @@ describe("source control panel", function()
     assert.is_false(vim.api.nvim_buf_is_valid(bufnr))
   end)
 
+  describe("diff preview", function()
+    -- `diff.preview` is the option that makes selecting a file show its added
+    -- and removed lines, which is the whole point of the panel for anyone
+    -- arriving from VS Code. It regressed once by being implemented as a
+    -- passive refresh that never opened anything.
+    local config = require("gitui.config")
+    local diff_view = require("gitui.ui.diff_view")
+
+    local function with_preview(mode, fn)
+      local previous = config.options.diff.preview
+      config.options.diff.preview = mode
+      local ok, err = pcall(fn)
+      config.options.diff.preview = previous
+      diff_view.close()
+      if not ok then
+        error(err, 0)
+      end
+    end
+
+    ---Move the cursor onto a row and fire the event the user's `j` would.
+    local function select_row(panel, needle)
+      local lnum = assert(find_line(panel, needle), "no row for " .. needle)
+      panel:focus()
+      panel:set_cursor(lnum)
+      vim.api.nvim_exec_autocmds("CursorMoved", { buffer = panel.bufnr })
+    end
+
+    it("opens the diff when a file is selected, without stealing focus", function()
+      local dir = helper.init("preview-auto")
+      helper.write(dir, "app.lua", "alpha\nbravo\ncharlie\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      helper.write(dir, "app.lua", "alpha\nBRAVO\ncharlie\n")
+
+      local panel = open_panel(dir)
+
+      with_preview("auto", function()
+        select_row(panel, "app.lua")
+
+        t.wait_for(function()
+          local dp = require("gitui.ui.panel").get("diff")
+          return dp ~= nil and dp:is_open() and dp.canvas ~= nil
+        end, "the diff never opened")
+
+        local dp = require("gitui.ui.panel").get("diff")
+        t.wait_for(function()
+          return table.concat(vim.api.nvim_buf_get_lines(dp.bufnr, 0, -1, false), "\n"):find("BRAVO", 1, true) ~= nil
+        end, "the diff never rendered the change")
+
+        local text = table.concat(vim.api.nvim_buf_get_lines(dp.bufnr, 0, -1, false), "\n")
+        assert.is_not_nil(text:find("+BRAVO", 1, true), "added line should carry a + prefix:\n" .. text)
+        assert.is_not_nil(text:find("-bravo", 1, true), "removed line should carry a - prefix:\n" .. text)
+
+        -- The cursor must stay where the user left it.
+        assert.equals(panel.winid, vim.api.nvim_get_current_win())
+      end)
+    end)
+
+    it("retargets an open diff as the cursor moves between files", function()
+      local dir = helper.init("preview-retarget")
+      helper.write(dir, "one.lua", "a\n")
+      helper.write(dir, "two.lua", "b\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      helper.write(dir, "one.lua", "ONE\n")
+      helper.write(dir, "two.lua", "TWO\n")
+
+      local panel = open_panel(dir)
+
+      with_preview("auto", function()
+        select_row(panel, "one.lua")
+        t.wait_for(function()
+          local dp = require("gitui.ui.panel").get("diff")
+          return dp ~= nil and dp:is_open()
+        end, "the diff never opened")
+
+        local dp = require("gitui.ui.panel").get("diff")
+        t.wait_for(function()
+          return table.concat(vim.api.nvim_buf_get_lines(dp.bufnr, 0, -1, false), "\n"):find("ONE", 1, true) ~= nil
+        end, "first file never rendered")
+
+        select_row(panel, "two.lua")
+        t.wait_for(function()
+          return table.concat(vim.api.nvim_buf_get_lines(dp.bufnr, 0, -1, false), "\n"):find("TWO", 1, true) ~= nil
+        end, "the diff never retargeted to the second file")
+      end)
+    end)
+
+    it("opens nothing when preview is disabled", function()
+      local dir = helper.init("preview-off")
+      helper.write(dir, "app.lua", "a\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      helper.write(dir, "app.lua", "B\n")
+
+      local panel = open_panel(dir)
+
+      with_preview(false, function()
+        select_row(panel, "app.lua")
+        vim.wait(500)
+        local dp = require("gitui.ui.panel").get("diff")
+        assert.is_true(dp == nil or not dp:is_open(), "preview = false must not open a diff")
+      end)
+    end)
+
+    it("in follow mode never opens a view of its own", function()
+      local dir = helper.init("preview-follow")
+      helper.write(dir, "app.lua", "a\n")
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      helper.write(dir, "app.lua", "B\n")
+
+      local panel = open_panel(dir)
+
+      with_preview("follow", function()
+        select_row(panel, "app.lua")
+        vim.wait(500)
+        local dp = require("gitui.ui.panel").get("diff")
+        assert.is_true(dp == nil or not dp:is_open(), "follow mode must not open a diff")
+      end)
+    end)
+
+    it("accepts true as a synonym for auto", function()
+      local merged = config.setup({ diff = { preview = true }, default_keymaps = false, log_level = "off" })
+      assert.equals("auto", merged.diff.preview)
+    end)
+
+    it("repairs an invalid preview mode instead of breaking", function()
+      local merged = config.setup({ diff = { preview = "nonsense" }, default_keymaps = false, log_level = "off" })
+      assert.equals("auto", merged.diff.preview)
+    end)
+  end)
+
   it("survives having no repository", function()
     store.reset()
     repository.invalidate()

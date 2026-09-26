@@ -96,10 +96,14 @@ first use — but it is how configuration is applied.
 
   1. Open a file inside a git repository.
   2. `<leader>gs` opens the Source Control panel.
-  3. `j` / `k` to move, `s` to stage, `u` to unstage, `d` to diff.
-  4. `c` opens the commit editor. Write a message, then `<C-s>` or `:w`.
-  5. `p` pushes.
-  6. `?` shows every mapping, generated from your configuration.
+  3. `j` / `k` to move. Selecting a file shows its diff — added and removed
+     lines with + and -, in green and red — while the cursor stays in the
+     list. See |gitui-config-preview| to change or disable that.
+  4. `s` stages, `u` unstages, `x` discards. Inside the diff, `s` stages one
+     hunk, or exactly the lines selected in visual mode.
+  5. `c` opens the commit editor. Write a message, then `<C-s>` or `:w`.
+  6. `p` pushes.
+  7. `?` shows every mapping, generated from your configuration.
 
 ==============================================================================
 5. COMMANDS                                                   *gitui-commands*
@@ -245,7 +249,8 @@ IN A FILE BUFFER                                        *gitui-keymaps-buffer*
 
 SOURCE CONTROL PANEL                                    *gitui-keymaps-source*
 
-  <CR>          Open the file, or expand/collapse the row
+  (cursor)      Selecting a file shows its diff (|gitui-config-preview|)
+  <CR>          Open the file for editing, or expand/collapse the row
   <C-x> <C-v> <C-t>   Open in a split / vsplit / tab
   s  u  x       Stage / unstage / discard
   S  U          Stage everything / unstage everything
@@ -362,10 +367,21 @@ an explicit opt-in to an unsafe mode. >lua
       algorithm = "histogram",  -- myers | minimal | patience | histogram
       ignore_whitespace = false,
       layout = "vertical",
-      preview = true,           -- follow the panel cursor in an open diff
+      preview = "auto",
       preview_delay = 120,
     }
 <
+                                                       *gitui-config-preview*
+`diff.preview` decides what selecting a file in the Source Control panel does:
+
+  "auto"    Open its diff in the editor area, keeping the cursor in the
+            panel. Selecting a file shows its added and removed lines
+            immediately, which is the VS Code behaviour. This is the default.
+  "follow"  Only retarget a diff view that is already open; never open one.
+  false     Nothing. The diff opens on demand with `d`.
+
+`true` is accepted as a synonym for "auto". `preview_delay` debounces cursor
+movement so holding `j` does not queue a diff per row.
                                                          *gitui-config-signs*
 >lua
     signs = {
@@ -443,6 +459,11 @@ SOURCE CONTROL                                            *gitui-view-source*
 The panel answers six questions at a glance: what changed, what is staged,
 what is unstaged, what is conflicted, what branch you are on, and what you can
 do next.
+
+Moving the cursor onto a file shows its diff in the editor area, with added
+and removed lines marked `+` and `-` and highlighted green and red, while the
+cursor stays in the panel. `<CR>` opens the file itself for editing. See
+|gitui-config-preview| to change that.
 
 Sections appear only when they have content: MERGE CONFLICTS, STAGED CHANGES,
 CHANGES, STASHES. Changes are shown as a collapsible directory tree

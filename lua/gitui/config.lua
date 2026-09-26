@@ -102,8 +102,18 @@ local defaults = {
     ignore_whitespace = false,
     --- "vertical" places the two panes side by side, "horizontal" stacks them.
     layout = "vertical",
-    --- Show the diff for the entry under the cursor without leaving the panel.
-    preview = true,
+
+    --- What moving the cursor onto a file in the Source Control panel does.
+    ---
+    ---   "auto"   open the diff in the editor area, keeping the cursor in the
+    ---            panel. This is the VS Code behaviour: select a file, see its
+    ---            added and removed lines immediately.
+    ---   "follow" only update a diff view that is already open; never open one.
+    ---   false    do nothing; the diff opens only on demand with `d`.
+    ---
+    --- `true` is accepted as a synonym for "auto".
+    ---@type "auto"|"follow"|boolean
+    preview = "auto",
     preview_delay = 120,
   },
 
@@ -452,6 +462,16 @@ local function validate(opts)
   if opts.icons ~= true and opts.icons ~= false and opts.icons ~= "auto" then
     bad("icons", opts.icons, "true, false or 'auto'")
     opts.icons = defaults.icons
+  end
+
+  -- `true` has always meant "preview the entry under the cursor", so keep it
+  -- working now that the option names its modes.
+  if opts.diff.preview == true then
+    opts.diff.preview = "auto"
+  end
+  if opts.diff.preview ~= false and opts.diff.preview ~= "auto" and opts.diff.preview ~= "follow" then
+    bad("diff.preview", opts.diff.preview, "'auto', 'follow' or false")
+    opts.diff.preview = defaults.diff.preview
   end
 
   return problems

@@ -632,20 +632,46 @@ function M.open(repo, opts)
   load(instance)
 end
 
----Refresh an already-open diff to follow the panel's cursor.
+---Show the diff for the entry under the panel's cursor.
 ---
----Deliberately passive: it never opens the view, because a preview that steals
----a window is not a preview.
+---In "auto" mode this opens the diff view if it is not already open, which is
+---what makes selecting a file in the panel show its added and removed lines
+---the way VS Code does. Focus always stays where it was — the panel — so
+---cursor movement never pulls the user out of the list they are browsing.
+---
+---In "follow" mode an already-open diff is retargeted but none is opened.
+---@param repo GitRepository
 ---@param entry GitFileEntry
 ---@param side "index"|"worktree"|nil
-function M.preview(entry, side)
-  if not panel or not panel:is_open() or not current then
+function M.preview(repo, entry, side)
+  local mode = config.options.diff.preview
+  if mode == false then
     return
   end
+
   local kind = side == "index" and "index" or "worktree"
-  if current.path == entry.path and current.spec.kind == kind then
+  local is_open = panel ~= nil and panel:is_open()
+
+  if not is_open then
+    if mode ~= "auto" then
+      return
+    end
+    -- Opening without focus: the panel keeps the cursor, the editor area
+    -- shows the diff.
+    return M.open(repo, {
+      path = entry.path,
+      spec = { kind = kind },
+      entry = entry,
+      focus = false,
+    })
+  end
+
+  if current and current.path == entry.path and current.spec.kind == kind then
     return
   end
+
+  current = current or { repo = repo, diffs = {}, loading = true }
+  current.repo = repo
   current.path = entry.path
   current.entry = entry
   current.spec = { kind = kind }
