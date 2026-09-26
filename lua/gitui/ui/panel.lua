@@ -1,0 +1,587 @@
+---@brief Base class for every gitui panel.
+---
+---Owns the parts that must be identical everywhere and are easy to get subtly
+---wrong in eight separate places: buffer options, keymap installation from the
+---user's configuration, cursor preservation across redraws, mouse dispatch,
+---and — most importantly — deterministic teardown. When a panel closes, its
+---autocommands, keymaps, timers and extmarks go with it.
+
+local config = require("gitui.config")
+local logger = require("gitui.utils.logger")
+local render = require("gitui.ui.render")
+local window = require("gitui.ui.window")
+
+local M = {}
+
+---@class GitUIPanelSpec
+---@field name string  unique identifier, also used for the filetype
+---@field title string|fun(self: GitUIPanel): string
+---@field layout "sidebar"|"float"|"split"|"tab"|"editor"
+---@field keymap_group string|nil  section of `config.keymaps` to install
+---@field float GitUIFloatOpts|nil
+---@field render fun(self: GitUIPanel, canvas: GitUICanvas)
+---@field actions table<string, fun(self: GitUIPanel, item: any)>
+---@field visual_actions table<string, fun(self: GitUIPanel, first: integer, last: integer)>|nil
+---@field hints { key: string, label: string }[]|fun(self: GitUIPanel): table[]|nil
+---@field on_open fun(self: GitUIPanel)|nil
+---@field on_close fun(self: GitUIPanel)|nil
+---@field on_cursor fun(self: GitUIPanel, item: any)|nil
+---@field context_menu fun(self: GitUIPanel, item: any): table[]|nil
+
+---@class GitUIPanel
+---@field spec GitUIPanelSpec
+---@field bufnr integer|nil
+---@field winid integer|nil
+---@field canvas GitUICanvas|nil
+---@field namespace integer
+---@field augroup integer|nil
+---@field data table  view-specific state
+local Panel = {}
+Panel.__index = Panel
+
+---@type table<string, GitUIPanel>
+local registry = {}
+
+---@param spec GitUIPanelSpec
+---@return GitUIPanel
+function M.new(spec)
+  local panel = setmetatable({
+    spec = spec,
+    bufnr = nil,
+    winid = nil,
+    canvas = nil,
+    namespace = vim.api.nvim_create_namespace("gitui_" .. spec.name),
+    augroup = nil,
+    data = {},
+    _cleanup = {},
+  }, Panel)
+
+  registry[spec.name] = panel
+  return panel
+end
+
+---@param name string
+---@return GitUIPanel|nil
+function M.get(name)
+  return registry[name]
+end
+
+---@return GitUIPanel[]
+function M.all()
+  local panels = {}
+  for _, panel in pairs(registry) do
+    panels[#panels + 1] = panel
+  end
+  return panels
+end
+
+---Close every open panel. Used by `:GitUIClose` and on teardown.
+function M.close_all()
+  for _, panel in pairs(registry) do
+    if panel:is_open() then
+      panel:close()
+    end
+  end
+end
+
+--- Lifecycle -----------------------------------------------------------------
+
+---@return boolean
+function Panel:is_open()
+  return self.winid ~= nil and vim.api.nvim_win_is_valid(self.winid)
+end
+
+---@return boolean
+function Panel:is_focused()
+  return self:is_open() and vim.api.nvim_get_current_win() == self.winid
+end
+
+---@return string
+function Panel:title()
+  if type(self.spec.title) == "function" then
+    return self.spec.title(self)
+  end
+  return self.spec.title or self.spec.name
+end
+
+---Width available for rendering.
+---@return integer
+function Panel:width()
+  if self:is_open() then
+    return vim.api.nvim_win_get_width(self.winid)
+  end
+  if self.spec.layout == "sidebar" then
+    return window.sidebar_width()
+  end
+  return math.floor(vim.o.columns * 0.8)
+end
+
+---Create the buffer if it does not exist yet.
+---@return integer bufnr
+function Panel:ensure_buffer()
+  if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
+    return self.bufnr
+  end
+
+  self.bufnr = window.create_buffer({
+    name = self.spec.name,
+    filetype = "gitui-" .. self.spec.name:gsub("_", "-"),
+  })
+
+  self:install_keymaps()
+  self:install_autocmds()
+
+  return self.bufnr
+end
+
+---@param opts { focus: boolean|nil, position: string|nil }|nil
+---@return GitUIPanel
+function Panel:open(opts)
+  opts = opts or {}
+
+  if self:is_open() then
+    if opts.focus ~= false then
+      self:focus()
+    end
+    return self
+  end
+
+  local bufnr = self:ensure_buffer()
+  local previous_win = vim.api.nvim_get_current_win()
+
+  if self.spec.layout == "float" then
+    local float_opts = vim.tbl_extend("force", self.spec.float or {}, { title = self:title() })
+    self.winid = window.open_float(bufnr, float_opts)
+  elseif self.spec.layout == "tab" then
+    vim.cmd("tabnew")
+    self.winid = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(self.winid, bufnr)
+    window.configure_window(self.winid, { winfixwidth = false })
+  elseif self.spec.layout == "split" then
+    vim.cmd("botright split")
+    self.winid = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(self.winid, bufnr)
+    window.configure_window(self.winid, { winfixwidth = false })
+  elseif self.spec.layout == "editor" then
+    -- Take over the main editing area rather than adding more chrome: a diff
+    -- wants the space, and the sidebar stays where it is.
+    local target = window.pick_editor_window()
+    if target then
+      self.winid = target
+      vim.api.nvim_win_set_buf(target, bufnr)
+    else
+      vim.cmd("noautocmd vsplit")
+      self.winid = vim.api.nvim_get_current_win()
+      vim.api.nvim_win_set_buf(self.winid, bufnr)
+    end
+    window.configure_window(self.winid, { winfixwidth = false, number = false })
+  else
+    self.winid = window.open_sidebar(bufnr, { position = opts.position })
+  end
+
+  self:redraw()
+
+  if opts.focus == false and vim.api.nvim_win_is_valid(previous_win) then
+    vim.api.nvim_set_current_win(previous_win)
+  end
+
+  if self.spec.on_open then
+    self.spec.on_open(self)
+  end
+
+  local events = require("gitui.utils.events")
+  events.emit(events.names.PANEL_OPENED, { panel = self.spec.name })
+
+  return self
+end
+
+function Panel:focus()
+  if self:is_open() then
+    vim.api.nvim_set_current_win(self.winid)
+  end
+end
+
+---Close the panel's window, keeping its buffer so reopening is instant.
+function Panel:close()
+  if not self:is_open() then
+    return
+  end
+
+  local winid = self.winid
+  self.winid = nil
+
+  -- Remember where the user was so reopening lands in the same place.
+  if vim.api.nvim_win_is_valid(winid) then
+    local ok, cursor = pcall(vim.api.nvim_win_get_cursor, winid)
+    if ok then
+      self.data.last_cursor = cursor
+    end
+  end
+
+  window.close(winid)
+
+  if self.spec.on_close then
+    self.spec.on_close(self)
+  end
+
+  local events = require("gitui.utils.events")
+  events.emit(events.names.PANEL_CLOSED, { panel = self.spec.name })
+end
+
+---@param opts table|nil
+function Panel:toggle(opts)
+  if self:is_open() then
+    self:close()
+  else
+    self:open(opts)
+  end
+end
+
+---Release every resource this panel owns.
+function Panel:destroy()
+  self:close()
+
+  for _, cleanup in ipairs(self._cleanup) do
+    pcall(cleanup)
+  end
+  self._cleanup = {}
+
+  if self.augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, self.augroup)
+    self.augroup = nil
+  end
+
+  window.delete_buffer(self.bufnr)
+  self.bufnr = nil
+  self.canvas = nil
+end
+
+---Register a function to run when the panel is destroyed.
+---@param fn fun()
+function Panel:on_destroy(fn)
+  self._cleanup[#self._cleanup + 1] = fn
+end
+
+--- Rendering -----------------------------------------------------------------
+
+---Rebuild and reapply the panel's contents, preserving the cursor.
+function Panel:redraw()
+  if not self.bufnr or not vim.api.nvim_buf_is_valid(self.bufnr) then
+    return
+  end
+
+  local cursor = nil
+  if self:is_open() then
+    local ok, position = pcall(vim.api.nvim_win_get_cursor, self.winid)
+    if ok then
+      cursor = position
+    end
+  end
+  cursor = cursor or self.data.last_cursor
+
+  -- Remember what the cursor was pointing *at*, not just where it was: after a
+  -- stage the row moves to another section, and following the item is what the
+  -- user expects.
+  local anchor = cursor and self.canvas and self.canvas:item_at(cursor[1]) or nil
+
+  local canvas = render.new({ width = self:width() })
+  local ok, err = pcall(self.spec.render, self, canvas)
+  if not ok then
+    logger.error("panel render failed for", self.spec.name, err)
+    canvas = render.new({ width = self:width() })
+    canvas:text("Rendering failed. See :GitUILog for details.", "GitUIError")
+  end
+
+  self.canvas = canvas
+  canvas:apply(self.bufnr, self.namespace)
+
+  if self:is_open() then
+    local target = nil
+    if anchor and anchor.id then
+      target = canvas:find(function(item)
+        return item.id == anchor.id
+      end)
+    end
+    target = target or (cursor and cursor[1]) or 1
+    self:set_cursor(target)
+  end
+end
+
+---Move the cursor to a line, clamped to the buffer.
+---
+---A nil or out-of-range line is a no-op rather than an error: callers derive
+---line numbers from canvas lookups that legitimately return nothing when the
+---view is empty, and a panel must never take the editor down with it.
+---@param lnum integer|nil
+---@param col integer|nil
+function Panel:set_cursor(lnum, col)
+  if not self:is_open() or type(lnum) ~= "number" then
+    return
+  end
+  local count = vim.api.nvim_buf_line_count(self.bufnr)
+  lnum = math.max(1, math.min(lnum, count))
+  pcall(vim.api.nvim_win_set_cursor, self.winid, { lnum, col or 0 })
+  self.data.last_cursor = { lnum, col or 0 }
+end
+
+---Move the cursor to the first row whose item satisfies `predicate`.
+---@param predicate fun(item: any): boolean
+---@return boolean found
+function Panel:jump_to(predicate)
+  if not self.canvas then
+    return false
+  end
+  local lnum = self.canvas:find(predicate)
+  if lnum then
+    self:set_cursor(lnum)
+    return true
+  end
+  return false
+end
+
+---Item under the cursor.
+---@return any|nil
+function Panel:item()
+  if not self:is_open() or not self.canvas then
+    return nil
+  end
+  local ok, cursor = pcall(vim.api.nvim_win_get_cursor, self.winid)
+  if not ok then
+    return nil
+  end
+  return self.canvas:item_at(cursor[1])
+end
+
+---@return integer lnum
+function Panel:cursor_line()
+  if not self:is_open() then
+    return 1
+  end
+  local ok, cursor = pcall(vim.api.nvim_win_get_cursor, self.winid)
+  return ok and cursor[1] or 1
+end
+
+---Items covered by a line range, deduplicated by identity.
+---@param first integer
+---@param last integer
+---@return any[]
+function Panel:items_in_range(first, last)
+  if not self.canvas then
+    return {}
+  end
+  local seen, out = {}, {}
+  for lnum = first, last do
+    local item = self.canvas:item_at(lnum)
+    if item and not seen[item] then
+      seen[item] = true
+      out[#out + 1] = item
+    end
+  end
+  return out
+end
+
+---The visual selection's line range, usable from a normal-mode mapping that
+---was invoked with `:<C-u>`.
+---@return integer first, integer last
+function Panel:visual_range()
+  local first = vim.fn.line("v")
+  local last = vim.fn.line(".")
+  if first > last then
+    first, last = last, first
+  end
+  return first, last
+end
+
+--- Keymaps -------------------------------------------------------------------
+
+---Resolve an action's configured left-hand sides.
+---@param action string
+---@return string[]
+function Panel:keys_for(action)
+  local keymaps = config.options.keymaps
+  local group = self.spec.keymap_group and keymaps[self.spec.keymap_group] or nil
+
+  local lhs = nil
+  if group and group[action] ~= nil then
+    lhs = group[action]
+  elseif keymaps.common[action] ~= nil then
+    lhs = keymaps.common[action]
+  end
+
+  if lhs == false or lhs == nil then
+    return {}
+  end
+  if type(lhs) == "string" then
+    return { lhs }
+  end
+  return lhs
+end
+
+---@param mode string|string[]
+---@param lhs string
+---@param rhs fun()
+---@param desc string
+function Panel:map(mode, lhs, rhs, desc)
+  vim.keymap.set(mode, lhs, rhs, {
+    buffer = self.bufnr,
+    nowait = true,
+    silent = true,
+    desc = "gitui: " .. desc,
+  })
+end
+
+function Panel:install_keymaps()
+  local actions = self.spec.actions or {}
+
+  for action, handler in pairs(actions) do
+    for _, lhs in ipairs(self:keys_for(action)) do
+      self:map("n", lhs, function()
+        handler(self, self:item())
+      end, action:gsub("_", " "))
+    end
+  end
+
+  for action, handler in pairs(self.spec.visual_actions or {}) do
+    for _, lhs in ipairs(self:keys_for(action)) do
+      self:map("x", lhs, function()
+        local first, last = self:visual_range()
+        -- Leave visual mode before acting so the operation's own prompts and
+        -- window changes are not fighting the selection.
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+        handler(self, first, last)
+      end, action:gsub("_", " "))
+    end
+  end
+
+  -- Universal panel bindings. These are installed for every panel and are
+  -- resolved from `keymaps.common`, so a user can rebind them once.
+  if not actions.close then
+    for _, lhs in ipairs(self:keys_for("close")) do
+      self:map("n", lhs, function()
+        self:close()
+      end, "close")
+    end
+  end
+
+  if not actions.help then
+    for _, lhs in ipairs(self:keys_for("help")) do
+      self:map("n", lhs, function()
+        require("gitui.ui.help").show(self)
+      end, "help")
+    end
+  end
+
+  for _, lhs in ipairs(self:keys_for("palette")) do
+    self:map("n", lhs, function()
+      require("gitui.ui.palette").open()
+    end, "command palette")
+  end
+
+  self:install_mouse()
+end
+
+function Panel:install_mouse()
+  if not config.options.mouse.enabled then
+    return
+  end
+  local mouse = require("gitui.ui.mouse")
+  mouse.attach(self)
+end
+
+--- Autocommands ---------------------------------------------------------------
+
+function Panel:install_autocmds()
+  self.augroup = vim.api.nvim_create_augroup("GitUIPanel_" .. self.spec.name, { clear = true })
+
+  -- Closing the window by any means (`:q`, `:only`, a window picker) must run
+  -- the same teardown as `Panel:close()`.
+  vim.api.nvim_create_autocmd("WinClosed", {
+    group = self.augroup,
+    callback = function(args)
+      local closed = tonumber(args.match)
+      if closed and closed == self.winid then
+        self.winid = nil
+        if self.spec.on_close then
+          self.spec.on_close(self)
+        end
+      end
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = self.augroup,
+    buffer = self.bufnr,
+    callback = function()
+      self.bufnr = nil
+      self.canvas = nil
+    end,
+  })
+
+  -- Re-render on resize so the responsive layout actually responds.
+  vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, {
+    group = self.augroup,
+    callback = function()
+      if self:is_open() then
+        vim.schedule(function()
+          self:redraw()
+        end)
+      end
+    end,
+  })
+
+  if self.spec.on_cursor then
+    local debounce = require("gitui.utils.debounce")
+    local notify_cursor = debounce.trailing(function()
+      if self:is_open() and self.spec.on_cursor then
+        self.spec.on_cursor(self, self:item())
+      end
+    end, config.options.diff.preview_delay)
+
+    vim.api.nvim_create_autocmd("CursorMoved", {
+      group = self.augroup,
+      buffer = self.bufnr,
+      callback = notify_cursor,
+    })
+  end
+end
+
+--- Hints ----------------------------------------------------------------------
+
+---The key hints to show in the footer, already resolved to configured keys.
+---@return { key: string, label: string }[]
+function Panel:hints()
+  local hints = self.spec.hints
+  if type(hints) == "function" then
+    hints = hints(self)
+  end
+  if not hints then
+    return {}
+  end
+
+  local resolved = {}
+  for _, hint in ipairs(hints) do
+    local keys = self:keys_for(hint.key)
+    if #keys > 0 then
+      resolved[#resolved + 1] = { key = keys[1], label = hint.label }
+    end
+  end
+  return resolved
+end
+
+---Append the hint footer to a canvas, if hints are enabled and there is room.
+---@param canvas GitUICanvas
+function Panel:render_hints(canvas)
+  if not config.options.hints then
+    return
+  end
+  local hints = self:hints()
+  if #hints == 0 then
+    return
+  end
+  canvas:blank()
+  render.hint_footer(canvas, hints, self:width())
+end
+
+M.Panel = Panel
+
+return M
