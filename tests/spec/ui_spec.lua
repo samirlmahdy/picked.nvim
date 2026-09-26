@@ -637,13 +637,8 @@ describe("inline signs", function()
     assert.equals(1, summary.changed)
 
     -- The sign must actually be placed in the sign column.
-    local marks = vim.api.nvim_buf_get_extmarks(
-      bufnr,
-      vim.api.nvim_create_namespace("gitui_signs"),
-      0,
-      -1,
-      { details = true }
-    )
+    local marks =
+      vim.api.nvim_buf_get_extmarks(bufnr, vim.api.nvim_create_namespace("gitui_signs"), 0, -1, { details = true })
     assert.is_true(#marks >= 1)
 
     vim.cmd("noautocmd bwipeout!")

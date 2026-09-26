@@ -421,21 +421,17 @@ function M.blob(repo, rev, path, callback)
   -- `:0:path` for an index stage, `<rev>:path` for a commit. Only the first
   -- colon separates, so a path containing one is unambiguous either way.
   local object = rev .. ":" .. path
-  return command.run(
-    { "--no-replace-objects", "cat-file", "blob", object },
-    { cwd = repo.root },
-    function(result)
-      if not result.ok then
-        -- A path that does not exist at this revision is an expected outcome
-        -- (a newly added file has no HEAD version), not an error to report.
-        if result.stderr:find("does not exist") or result.stderr:find("exists on disk, but not in") then
-          return callback("", nil)
-        end
-        return callback(nil, command.classify(result))
+  return command.run({ "--no-replace-objects", "cat-file", "blob", object }, { cwd = repo.root }, function(result)
+    if not result.ok then
+      -- A path that does not exist at this revision is an expected outcome
+      -- (a newly added file has no HEAD version), not an error to report.
+      if result.stderr:find("does not exist") or result.stderr:find("exists on disk, but not in") then
+        return callback("", nil)
       end
-      callback(result.stdout, nil)
+      return callback(nil, command.classify(result))
     end
-  )
+    callback(result.stdout, nil)
+  end)
 end
 
 ---Content of a path in the index (stage 0).

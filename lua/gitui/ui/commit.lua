@@ -116,15 +116,16 @@ local function render_info(current)
   end
 
   local state = store.get(current.repo.root)
-  local canvas = render.new({ width = vim.api.nvim_win_is_valid(current.info_winid or -1)
-      and vim.api.nvim_win_get_width(current.info_winid)
-    or 40 })
+  local canvas = render.new({
+    width = vim.api.nvim_win_is_valid(current.info_winid or -1) and vim.api.nvim_win_get_width(current.info_winid)
+      or 40,
+  })
 
   local head = state and state.head
-  canvas:row(nil):add(icons.get("branch") .. " ", "GitUIBranch"):add(
-    head and (head.branch or (head.detached and "detached HEAD" or "?")) or "?",
-    "GitUIBranchCurrent"
-  )
+  canvas
+    :row(nil)
+    :add(icons.get("branch") .. " ", "GitUIBranch")
+    :add(head and (head.branch or (head.detached and "detached HEAD" or "?")) or "?", "GitUIBranchCurrent")
 
   if current.amend then
     canvas:blank()
@@ -143,7 +144,8 @@ local function render_info(current)
   local highlights = require("gitui.ui.highlights")
   for _, entry in ipairs(staged) do
     local code = git.status.code_for(entry, "index")
-    canvas:row(nil)
+    canvas
+      :row(nil)
       :add("  ")
       :add(code, highlights.for_status(code))
       :add(" ")
@@ -367,8 +369,7 @@ function M.open(repo, opts)
   -- `:w` is advertised alongside the key because many terminals swallow
   -- <C-s> for XON/XOFF flow control, and <C-CR> is not deliverable at all in
   -- some of them. Writing the buffer always works.
-  local submit_key = type(config.options.keymaps.commit.submit) == "table"
-      and config.options.keymaps.commit.submit[1]
+  local submit_key = type(config.options.keymaps.commit.submit) == "table" and config.options.keymaps.commit.submit[1]
     or config.options.keymaps.commit.submit
 
   local winid = window.open_float(bufnr, {

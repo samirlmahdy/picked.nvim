@@ -258,9 +258,7 @@ local function spawn(args, opts, callback)
     env = vim.tbl_extend("force", env, opts.env)
   end
 
-  local timeout = opts.timeout
-    or (opts.hooks and config.options.network_timeout)
-    or config.options.timeout
+  local timeout = opts.timeout or (opts.hooks and config.options.network_timeout) or config.options.timeout
 
   local started = vim.uv.hrtime()
   local cancelled = false

@@ -23,8 +23,7 @@ local function check_version()
   if vim.fn.has("nvim-0.10") == 1 then
     return true, nil
   end
-  return false,
-    ("gitui.nvim requires Neovim %d.%d or newer"):format(MIN_NVIM[1], MIN_NVIM[2])
+  return false, ("gitui.nvim requires Neovim %d.%d or newer"):format(MIN_NVIM[1], MIN_NVIM[2])
 end
 
 ---The repository the user means right now: the active one, or whichever owns

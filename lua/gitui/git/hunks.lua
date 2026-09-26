@@ -195,10 +195,8 @@ end
 ---@param hunk GitHunk
 ---@return string
 function M.header(hunk)
-  local old = hunk.old_count == 1 and tostring(hunk.old_start)
-    or ("%d,%d"):format(hunk.old_start, hunk.old_count)
-  local new = hunk.new_count == 1 and tostring(hunk.new_start)
-    or ("%d,%d"):format(hunk.new_start, hunk.new_count)
+  local old = hunk.old_count == 1 and tostring(hunk.old_start) or ("%d,%d"):format(hunk.old_start, hunk.old_count)
+  local new = hunk.new_count == 1 and tostring(hunk.new_start) or ("%d,%d"):format(hunk.new_start, hunk.new_count)
   local header = ("@@ -%s +%s @@"):format(old, new)
   if hunk.heading and hunk.heading ~= "" then
     header = header .. " " .. hunk.heading
@@ -435,7 +433,7 @@ function M.quote_path(path)
   if not path:find('[%c"\\]') then
     return path
   end
-  local escaped = path:gsub("[\\\"]", "\\%0")
+  local escaped = path:gsub('[\\"]', "\\%0")
   escaped = escaped:gsub("%c", function(char)
     local byte = char:byte()
     local named = { [7] = "\\a", [8] = "\\b", [12] = "\\f", [10] = "\\n", [13] = "\\r", [9] = "\\t", [11] = "\\v" }
@@ -529,10 +527,7 @@ function M.to_display(hunks)
     local old_ln, new_ln = hunk.old_start, hunk.new_start
     for body_index, line in ipairs(hunk.lines) do
       local prefix = line:sub(1, 1)
-      local kind = prefix == "+" and "add"
-        or prefix == "-" and "delete"
-        or prefix == "\\" and "marker"
-        or "context"
+      local kind = prefix == "+" and "add" or prefix == "-" and "delete" or prefix == "\\" and "marker" or "context"
 
       local row = {
         text = line,

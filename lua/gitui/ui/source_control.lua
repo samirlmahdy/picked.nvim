@@ -125,7 +125,8 @@ local function render_header(canvas, state, panel)
   end
 
   if state.repo.is_linked_worktree and not narrow then
-    canvas:row({ id = "header:worktree", kind = "header" })
+    canvas
+      :row({ id = "header:worktree", kind = "header" })
       :add("  worktree: " .. require("gitui.utils.path").tilde(state.repo.root), "GitUIDim")
   end
 
@@ -276,10 +277,12 @@ local function render_section(canvas, panel, opts)
   end
 
   local use_tree = config.options.tree and not narrow
-  local nodes = use_tree and tree_lib.build(opts.entries, {
-    id_prefix = opts.name,
-    flatten = config.options.tree_flatten,
-  }) or tree_lib.flat(opts.entries, { id_prefix = opts.name })
+  local nodes = use_tree
+      and tree_lib.build(opts.entries, {
+        id_prefix = opts.name,
+        flatten = config.options.tree_flatten,
+      })
+    or tree_lib.flat(opts.entries, { id_prefix = opts.name })
 
   render_tree(canvas, nodes, {
     section = opts.name,
@@ -384,7 +387,8 @@ local function render_panel(panel, canvas)
 
   if status.clean then
     canvas:blank()
-    canvas:row({ id = "empty", kind = "empty" })
+    canvas
+      :row({ id = "empty", kind = "empty" })
       :add("  " .. icons.get("success") .. " ", "GitUISuccess")
       :add("No changes", "GitUIDim")
   end
@@ -749,16 +753,20 @@ actions.resolve = function(_, item)
   if #conflicted == 1 then
     return require("gitui.ui.conflict").open(repo, conflicted[1].path)
   end
-  operations.mark_resolved(repo, vim.tbl_map(function(entry)
-    return entry.path
-  end, conflicted))
+  operations.mark_resolved(
+    repo,
+    vim.tbl_map(function(entry)
+      return entry.path
+    end, conflicted)
+  )
 end
 
 actions.next_file = function(panel)
   local line = panel:cursor_line()
-  local target = panel.canvas and panel.canvas:find(function(item, lnum)
-    return item.kind == "file" and lnum > line
-  end)
+  local target = panel.canvas
+    and panel.canvas:find(function(item, lnum)
+      return item.kind == "file" and lnum > line
+    end)
   if target then
     panel:set_cursor(target)
   end
@@ -770,9 +778,11 @@ actions.prev_file = function(panel)
   end
   local line = panel:cursor_line()
   local best = nil
-  for _, lnum in ipairs(panel.canvas:find_all(function(item)
-    return item.kind == "file"
-  end)) do
+  for _, lnum in
+    ipairs(panel.canvas:find_all(function(item)
+      return item.kind == "file"
+    end))
+  do
     if lnum < line then
       best = lnum
     end
@@ -784,9 +794,10 @@ end
 
 actions.next_section = function(panel)
   local line = panel:cursor_line()
-  local target = panel.canvas and panel.canvas:find(function(item, lnum)
-    return item.kind == "section" and lnum > line
-  end)
+  local target = panel.canvas
+    and panel.canvas:find(function(item, lnum)
+      return item.kind == "section" and lnum > line
+    end)
   panel:set_cursor(target or 1)
 end
 
@@ -796,9 +807,11 @@ actions.prev_section = function(panel)
   end
   local line = panel:cursor_line()
   local best = nil
-  for _, lnum in ipairs(panel.canvas:find_all(function(item)
-    return item.kind == "section"
-  end)) do
+  for _, lnum in
+    ipairs(panel.canvas:find_all(function(item)
+      return item.kind == "section"
+    end))
+  do
     if lnum < line then
       best = lnum
     end
@@ -866,9 +879,12 @@ visual_actions.stage = function(panel, first, last)
     return
   end
   local entries = entries_in_range(panel, first, last)
-  operations.stage(repo, vim.tbl_map(function(entry)
-    return entry.path
-  end, entries))
+  operations.stage(
+    repo,
+    vim.tbl_map(function(entry)
+      return entry.path
+    end, entries)
+  )
 end
 
 visual_actions.unstage = function(panel, first, last)
@@ -877,9 +893,12 @@ visual_actions.unstage = function(panel, first, last)
     return
   end
   local entries = entries_in_range(panel, first, last)
-  operations.unstage(repo, vim.tbl_map(function(entry)
-    return entry.path
-  end, entries))
+  operations.unstage(
+    repo,
+    vim.tbl_map(function(entry)
+      return entry.path
+    end, entries)
+  )
 end
 
 visual_actions.discard = function(panel, first, last)

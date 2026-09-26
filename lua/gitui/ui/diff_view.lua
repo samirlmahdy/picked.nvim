@@ -98,7 +98,8 @@ end
 ---@param opts { width: integer, show_numbers: boolean }
 local function render_diff(canvas, diff, opts)
   if diff.binary then
-    canvas:row({ id = "bin:" .. diff.path, kind = "binary", diff = diff })
+    canvas
+      :row({ id = "bin:" .. diff.path, kind = "binary", diff = diff })
       :add("  Binary file — no textual diff", "GitUIDim")
     return
   end
@@ -340,9 +341,10 @@ end
 
 actions.next_hunk = function(panel_instance)
   local line = panel_instance:cursor_line()
-  local target = panel_instance.canvas and panel_instance.canvas:find(function(item, lnum)
-    return item.kind == "hunk" and lnum > line
-  end)
+  local target = panel_instance.canvas
+    and panel_instance.canvas:find(function(item, lnum)
+      return item.kind == "hunk" and lnum > line
+    end)
   if target then
     panel_instance:set_cursor(target)
   else
@@ -356,9 +358,11 @@ actions.prev_hunk = function(panel_instance)
   end
   local line = panel_instance:cursor_line()
   local best = nil
-  for _, lnum in ipairs(panel_instance.canvas:find_all(function(item)
-    return item.kind == "hunk"
-  end)) do
+  for _, lnum in
+    ipairs(panel_instance.canvas:find_all(function(item)
+      return item.kind == "hunk"
+    end))
+  do
     if lnum < line then
       best = lnum
     end
@@ -370,9 +374,10 @@ end
 
 actions.next_file = function(panel_instance)
   local line = panel_instance:cursor_line()
-  local target = panel_instance.canvas and panel_instance.canvas:find(function(item, lnum)
-    return item.kind == "file" and lnum > line
-  end)
+  local target = panel_instance.canvas
+    and panel_instance.canvas:find(function(item, lnum)
+      return item.kind == "file" and lnum > line
+    end)
   if target then
     panel_instance:set_cursor(target)
   end
@@ -384,9 +389,11 @@ actions.prev_file = function(panel_instance)
   end
   local line = panel_instance:cursor_line()
   local best = nil
-  for _, lnum in ipairs(panel_instance.canvas:find_all(function(item)
-    return item.kind == "file"
-  end)) do
+  for _, lnum in
+    ipairs(panel_instance.canvas:find_all(function(item)
+      return item.kind == "file"
+    end))
+  do
     if lnum < line then
       best = lnum
     end
@@ -889,8 +896,7 @@ function M.open_side_by_side(repo, path, spec)
       vim.cmd("diffthis")
       vim.wo[left_winid].winbar = (" %s   ]c/[c hunks   %s unified "):format(
         left_label:upper(),
-        type(config.options.keymaps.diff.toggle_view) == "table"
-            and config.options.keymaps.diff.toggle_view[1]
+        type(config.options.keymaps.diff.toggle_view) == "table" and config.options.keymaps.diff.toggle_view[1]
           or config.options.keymaps.diff.toggle_view
       )
 
@@ -904,10 +910,9 @@ function M.open_side_by_side(repo, path, spec)
       pcall(vim.cmd, "normal! gg")
       pcall(vim.cmd, "normal! ]c")
 
-      notify.info(("%s ↔ %s   ]c/[c jump hunks   :GitUIDiffView returns to the unified patch"):format(
-        left_label,
-        right_label
-      ))
+      notify.info(
+        ("%s ↔ %s   ]c/[c jump hunks   :GitUIDiffView returns to the unified patch"):format(left_label, right_label)
+      )
     end
 
     if right_rev then

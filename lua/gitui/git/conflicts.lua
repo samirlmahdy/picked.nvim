@@ -201,17 +201,13 @@ end
 ---@param repo GitRepository
 ---@param callback fun(paths: string[]|nil, err: GitError|nil)
 function M.unmerged_paths(repo, callback)
-  command.run(
-    { "diff", "--name-only", "--diff-filter=U", "-z" },
-    { cwd = repo.root },
-    function(result)
-      if not result.ok then
-        return callback(nil, command.classify(result))
-      end
-      local text_util = require("gitui.utils.text")
-      callback(text_util.nul_split(result.stdout), nil)
+  command.run({ "diff", "--name-only", "--diff-filter=U", "-z" }, { cwd = repo.root }, function(result)
+    if not result.ok then
+      return callback(nil, command.classify(result))
     end
-  )
+    local text_util = require("gitui.utils.text")
+    callback(text_util.nul_split(result.stdout), nil)
+  end)
 end
 
 ---Does this file still contain conflict markers on disk?

@@ -238,13 +238,9 @@ end
 ---@param name string
 ---@param callback fun(exists: boolean)
 function M.exists(repo, name, callback)
-  command.run(
-    { "show-ref", "--verify", "--quiet", "refs/heads/" .. name },
-    { cwd = repo.root },
-    function(result)
-      callback(result.ok)
-    end
-  )
+  command.run({ "show-ref", "--verify", "--quiet", "refs/heads/" .. name }, { cwd = repo.root }, function(result)
+    callback(result.ok)
+  end)
 end
 
 --- Operations ---------------------------------------------------------------
@@ -444,11 +440,7 @@ end
 ---@param mode "soft"|"mixed"|"hard"|"keep"|"merge"
 ---@param callback GitBranchCallback
 function M.reset(repo, revision, mode, callback)
-  command.run(
-    { "reset", "--" .. mode, revision },
-    { cwd = repo.root, serialize = true },
-    finish(callback)
-  )
+  command.run({ "reset", "--" .. mode, revision }, { cwd = repo.root, serialize = true }, finish(callback))
 end
 
 return M

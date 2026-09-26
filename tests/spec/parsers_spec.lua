@@ -14,8 +14,14 @@ describe("branches", function()
   it("parses local, remote and tag refs", function()
     local raw = table.concat({
       table.concat({
-        "refs/heads/main", "aaa111", "*", "origin/main",
-        "ahead 2, behind 1", "latest work", "Sam", "1767225600",
+        "refs/heads/main",
+        "aaa111",
+        "*",
+        "origin/main",
+        "ahead 2, behind 1",
+        "latest work",
+        "Sam",
+        "1767225600",
       }, "\0"),
       table.concat({ "refs/heads/feature/cart", "bbb222", " ", "", "", "wip", "Sam", "1767139200" }, "\0"),
       table.concat({ "refs/remotes/origin/main", "aaa111", " ", "", "", "latest work", "Sam", "1767225600" }, "\0"),
@@ -69,8 +75,20 @@ describe("branches", function()
 
     it("rejects illegal names with an explanation", function()
       local bad = {
-        "", "-dash", ".hidden", "has space", "a..b", "ends/", "/starts",
-        "x.lock", "a@{b", "ctrl\tchar", "tilde~x", "caret^x", "colon:x", "star*x",
+        "",
+        "-dash",
+        ".hidden",
+        "has space",
+        "a..b",
+        "ends/",
+        "/starts",
+        "x.lock",
+        "a@{b",
+        "ctrl\tchar",
+        "tilde~x",
+        "caret^x",
+        "colon:x",
+        "star*x",
       }
       for _, name in ipairs(bad) do
         local ok, reason = branches.validate_name(name)
@@ -208,7 +226,7 @@ describe("commits", function()
     local repo = assert(repository.detect(dir))
 
     local ok, err = t.await(function(done)
-      commits.commit(repo, { message = "subject line\n\nbody with \"quotes\" and $shell `chars`\n" }, done)
+      commits.commit(repo, { message = 'subject line\n\nbody with "quotes" and $shell `chars`\n' }, done)
     end)
     assert.is_true(ok, err and err.reason or "")
 
@@ -360,9 +378,17 @@ describe("conflicts", function()
 
   it("parses several regions", function()
     local text = table.concat({
-      "<<<<<<< HEAD", "a", "=======", "b", ">>>>>>> x",
+      "<<<<<<< HEAD",
+      "a",
+      "=======",
+      "b",
+      ">>>>>>> x",
       "middle",
-      "<<<<<<< HEAD", "c", "=======", "d", ">>>>>>> x",
+      "<<<<<<< HEAD",
+      "c",
+      "=======",
+      "d",
+      ">>>>>>> x",
     }, "\n")
     local regions = conflicts.parse(text)
     assert.equals(2, #regions)

@@ -117,7 +117,8 @@ local function render_panel(self, canvas)
   end
 
   if query ~= "" then
-    canvas:row({ id = "filter", kind = "info" })
+    canvas
+      :row({ id = "filter", kind = "info" })
       :add("  filter: ", "GitUIDim")
       :add(query, "GitUIMatch")
       :add("   (<Esc> clears)", "GitUIDim")

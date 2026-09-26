@@ -111,9 +111,7 @@ local function log(level, ...)
       file_handle = io.open(M.file(), "a")
     end
     if file_handle then
-      file_handle:write(
-        ("%s [%s] %s\n"):format(os.date("%Y-%m-%d %H:%M:%S"), LEVEL_NAMES[level] or "?", message)
-      )
+      file_handle:write(("%s [%s] %s\n"):format(os.date("%Y-%m-%d %H:%M:%S"), LEVEL_NAMES[level] or "?", message))
       file_handle:flush()
     end
   end

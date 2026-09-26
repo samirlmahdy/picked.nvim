@@ -117,7 +117,8 @@ local function render_panel(self, canvas)
     canvas:text("  Loading…", "GitUIDim")
   elseif not current.exhausted then
     local keys = self:keys_for("load_more")
-    canvas:row({ id = "more", kind = "more" })
+    canvas
+      :row({ id = "more", kind = "more" })
       :add("  ")
       :add(keys[1] or "L", "GitUIKey", "load_more")
       :add(("  load more (%d shown)"):format(#current.commits), "GitUIHint", "load_more")
@@ -226,26 +227,37 @@ function M.show_commit(repo, commit)
   field("Author", ("%s <%s>"):format(commit.author_name, commit.author_email), "GitUIAuthor")
   field(
     "Date",
-    ("%s  (%s)"):format(
-      os.date("%Y-%m-%d %H:%M:%S", commit.author_date),
-      text_util.relative_time(commit.author_date)
-    ),
+    ("%s  (%s)"):format(os.date("%Y-%m-%d %H:%M:%S", commit.author_date), text_util.relative_time(commit.author_date)),
     "GitUIDate"
   )
   if commit.committer_name ~= commit.author_name then
     field("Committer", ("%s <%s>"):format(commit.committer_name, commit.committer_email), "GitUIAuthor")
   end
   if #commit.parents > 0 then
-    field("Parents", table.concat(vim.tbl_map(function(parent)
-      return parent:sub(1, 7)
-    end, commit.parents), "  "), "GitUIHash")
+    field(
+      "Parents",
+      table.concat(
+        vim.tbl_map(function(parent)
+          return parent:sub(1, 7)
+        end, commit.parents),
+        "  "
+      ),
+      "GitUIHash"
+    )
   else
     field("Parents", "none (root commit)", "GitUIDim")
   end
   if #commit.refs > 0 then
-    field("Refs", table.concat(vim.tbl_map(function(ref)
-      return ref.name
-    end, commit.refs), ", "), "GitUIBranch")
+    field(
+      "Refs",
+      table.concat(
+        vim.tbl_map(function(ref)
+          return ref.name
+        end, commit.refs),
+        ", "
+      ),
+      "GitUIBranch"
+    )
   end
 
   canvas:blank()

@@ -96,11 +96,12 @@ local function parse_submodule_field(field)
   if field:sub(1, 1) ~= "S" then
     return false, nil
   end
-  return true, {
-    commit = field:sub(2, 2) == "C",
-    modified = field:sub(3, 3) == "M",
-    untracked = field:sub(4, 4) == "U",
-  }
+  return true,
+    {
+      commit = field:sub(2, 2) == "C",
+      modified = field:sub(3, 3) == "M",
+      untracked = field:sub(4, 4) == "U",
+    }
 end
 
 ---@param value string

@@ -46,7 +46,7 @@ function M.parse(raw)
       if selector ~= "" then
         local branch, message = parse_subject(values[4] or "")
         stashes[#stashes + 1] = {
-          index = tonumber(selector:match("{(%d+)}")) or (#stashes),
+          index = tonumber(selector:match("{(%d+)}")) or #stashes,
           selector = selector,
           oid = values[2] or "",
           date = tonumber(values[3]) or 0,
@@ -65,21 +65,17 @@ end
 ---@param callback fun(stashes: GitStash[]|nil, err: GitError|nil)
 ---@return GitHandle
 function M.list(repo, callback)
-  return command.run(
-    { "stash", "list", "-z", "--format=" .. FORMAT },
-    { cwd = repo.root },
-    function(result)
-      if not result.ok then
-        -- A repository with no stash ref reports an error on some git
-        -- versions; an empty list is the right answer either way.
-        if result.stderr:find("unknown revision") or result.stderr:find("ambiguous argument") then
-          return callback({}, nil)
-        end
-        return callback(nil, command.classify(result))
+  return command.run({ "stash", "list", "-z", "--format=" .. FORMAT }, { cwd = repo.root }, function(result)
+    if not result.ok then
+      -- A repository with no stash ref reports an error on some git
+      -- versions; an empty list is the right answer either way.
+      if result.stderr:find("unknown revision") or result.stderr:find("ambiguous argument") then
+        return callback({}, nil)
       end
-      callback(M.parse(result.stdout), nil)
+      return callback(nil, command.classify(result))
     end
-  )
+    callback(M.parse(result.stdout), nil)
+  end)
 end
 
 ---@param callback fun(ok: boolean, err: GitError|nil)

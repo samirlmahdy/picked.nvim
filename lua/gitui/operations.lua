@@ -142,9 +142,7 @@ function M.discard(repo, entries)
   elseif #untracked > 0 then
     message = ("Delete %s from disk."):format(plural(#untracked, "untracked file"))
   else
-    message = ("Restore %s from the index, losing the changes in the working tree."):format(
-      plural(#tracked, "file")
-    )
+    message = ("Restore %s from the index, losing the changes in the working tree."):format(plural(#tracked, "file"))
   end
 
   confirm.guard("discard", {
@@ -841,10 +839,14 @@ function M.stash_push(repo, opts)
   opts = opts or {}
   input.ask({ prompt = "Stash message (optional)", allow_empty = true }, function(message)
     mutate(repo, "stash", function(done)
-      git.stash.push(repo, vim.tbl_extend("force", opts, {
-        message = message,
-        include_untracked = opts.include_untracked ~= false,
-      }), done)
+      git.stash.push(
+        repo,
+        vim.tbl_extend("force", opts, {
+          message = message,
+          include_untracked = opts.include_untracked ~= false,
+        }),
+        done
+      )
     end, {
       success = "Stashed changes",
       on_success = function()

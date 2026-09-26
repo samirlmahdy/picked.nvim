@@ -336,9 +336,11 @@ describe("views", function()
       require("gitui.ui.log").open(repo, {})
       local panel = panel_lib.get("log")
       t.wait_for(function()
-        return panel:is_open() and panel.canvas ~= nil and panel.canvas:find(function(item)
-          return item.kind == "commit"
-        end) ~= nil
+        return panel:is_open()
+          and panel.canvas ~= nil
+          and panel.canvas:find(function(item)
+            return item.kind == "commit"
+          end) ~= nil
       end, "the history never rendered")
       return panel
     end

@@ -128,8 +128,16 @@ local SECTIONS = {
     {
       title = "Git",
       actions = {
-        "commit", "commit_amend", "commit_push", "push", "pull",
-        "fetch", "branches", "log", "stash", "resolve",
+        "commit",
+        "commit_amend",
+        "commit_push",
+        "push",
+        "pull",
+        "fetch",
+        "branches",
+        "log",
+        "stash",
+        "resolve",
       },
     },
     {
@@ -254,7 +262,8 @@ function M.show(source)
       canvas:blank()
       canvas:row(nil):add("  "):add(section.title, "GitUISectionHeader")
       for _, entry in ipairs(rows) do
-        canvas:row(nil)
+        canvas
+          :row(nil)
           :add("    ")
           :add(text_util.fit(entry.keys, key_width), "GitUIKey")
           :add("  ")
@@ -300,7 +309,8 @@ function M.show(source)
     }) do
       local lhs = globals[action]
       if lhs then
-        canvas:row(nil)
+        canvas
+          :row(nil)
           :add("    ")
           :add(text_util.fit(lhs, key_width), "GitUIKey")
           :add("  ")

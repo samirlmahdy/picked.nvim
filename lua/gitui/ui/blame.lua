@@ -84,8 +84,7 @@ local function draw(current)
         next_color = next_color + 1
         current.commit_colors[commit.oid] = next_color
       end
-      local hash_hl = color_commits and highlights.blame_commit(current.commit_colors[commit.oid])
-        or "GitUIBlameHash"
+      local hash_hl = color_commits and highlights.blame_commit(current.commit_colors[commit.oid]) or "GitUIBlameHash"
 
       -- Repeating the same commit on every line of a block is noise; showing
       -- it once per run makes the block structure visible instead.

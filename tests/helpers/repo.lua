@@ -15,25 +15,24 @@ local created = {}
 function M.git(cwd, args)
   local cmd = { "git" }
   vim.list_extend(cmd, args)
-  local result = vim.system(cmd, {
-    cwd = cwd,
-    text = true,
-    env = {
-      GIT_AUTHOR_NAME = "gitui test",
-      GIT_AUTHOR_EMAIL = "test@gitui.invalid",
-      GIT_COMMITTER_NAME = "gitui test",
-      GIT_COMMITTER_EMAIL = "test@gitui.invalid",
-      GIT_AUTHOR_DATE = "2026-01-01T00:00:00+00:00",
-      GIT_COMMITTER_DATE = "2026-01-01T00:00:00+00:00",
-      GIT_CONFIG_GLOBAL = "/dev/null",
-      GIT_CONFIG_SYSTEM = "/dev/null",
-      GIT_TERMINAL_PROMPT = "0",
-    },
-  }):wait()
-  assert(
-    result.code == 0,
-    ("git %s failed in %s:\n%s"):format(table.concat(args, " "), cwd, result.stderr or "")
-  )
+  local result = vim
+    .system(cmd, {
+      cwd = cwd,
+      text = true,
+      env = {
+        GIT_AUTHOR_NAME = "gitui test",
+        GIT_AUTHOR_EMAIL = "test@gitui.invalid",
+        GIT_COMMITTER_NAME = "gitui test",
+        GIT_COMMITTER_EMAIL = "test@gitui.invalid",
+        GIT_AUTHOR_DATE = "2026-01-01T00:00:00+00:00",
+        GIT_COMMITTER_DATE = "2026-01-01T00:00:00+00:00",
+        GIT_CONFIG_GLOBAL = "/dev/null",
+        GIT_CONFIG_SYSTEM = "/dev/null",
+        GIT_TERMINAL_PROMPT = "0",
+      },
+    })
+    :wait()
+  assert(result.code == 0, ("git %s failed in %s:\n%s"):format(table.concat(args, " "), cwd, result.stderr or ""))
   return result.stdout or ""
 end
 
@@ -44,19 +43,21 @@ end
 function M.git_try(cwd, args)
   local cmd = { "git" }
   vim.list_extend(cmd, args)
-  local result = vim.system(cmd, {
-    cwd = cwd,
-    text = true,
-    env = {
-      GIT_AUTHOR_NAME = "gitui test",
-      GIT_AUTHOR_EMAIL = "test@gitui.invalid",
-      GIT_COMMITTER_NAME = "gitui test",
-      GIT_COMMITTER_EMAIL = "test@gitui.invalid",
-      GIT_CONFIG_GLOBAL = "/dev/null",
-      GIT_CONFIG_SYSTEM = "/dev/null",
-      GIT_TERMINAL_PROMPT = "0",
-    },
-  }):wait()
+  local result = vim
+    .system(cmd, {
+      cwd = cwd,
+      text = true,
+      env = {
+        GIT_AUTHOR_NAME = "gitui test",
+        GIT_AUTHOR_EMAIL = "test@gitui.invalid",
+        GIT_COMMITTER_NAME = "gitui test",
+        GIT_COMMITTER_EMAIL = "test@gitui.invalid",
+        GIT_CONFIG_GLOBAL = "/dev/null",
+        GIT_CONFIG_SYSTEM = "/dev/null",
+        GIT_TERMINAL_PROMPT = "0",
+      },
+    })
+    :wait()
   return result.code, result.stdout or "", result.stderr or ""
 end
 
@@ -148,7 +149,7 @@ function M.kitchen_sink()
   M.write(dir, "src/api/users.lua", "return {}\n")
   M.write(dir, "src/deep/nested/dir/file.lua", "return 1\n")
   M.write(dir, "file with spaces.txt", "spaces\n")
-  M.write(dir, "quote\"name.txt", "quoted\n")
+  M.write(dir, 'quote"name.txt', "quoted\n")
   M.write(dir, "café/naïve-ünïcode.txt", "unicode\n")
   M.write(dir, "binary.bin", "\0\1\2\3\255\254binary\0data\n")
   M.git(dir, { "add", "-A" })

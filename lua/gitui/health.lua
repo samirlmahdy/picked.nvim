@@ -184,12 +184,7 @@ local function check_keymaps()
   for action, lhs in pairs(config.options.global_keymaps) do
     if type(lhs) == "string" and lhs ~= "" then
       local existing = vim.fn.maparg(lhs, "n", false, true)
-      if
-        existing
-        and existing.desc
-        and not tostring(existing.desc):match("^gitui")
-        and existing.buffer == 0
-      then
+      if existing and existing.desc and not tostring(existing.desc):match("^gitui") and existing.buffer == 0 then
         conflicts[#conflicts + 1] = ("%s (%s) is already mapped to: %s"):format(
           lhs,
           action,
