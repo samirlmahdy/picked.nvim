@@ -626,6 +626,10 @@ never runs git — so calling it on every statusline redraw is free: >lua
       busy = false, clean = false,
     }
 <
+`branch` is read from a file and so is available immediately, while the counts
+arrive with `git status` a moment later. During that window `busy` is true and
+every count is zero, which is how a consumer tells "still reading" apart from
+"nothing changed".
                                                           *gitui.statusline()*
 require("gitui").statusline({opts})
 

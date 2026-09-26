@@ -341,6 +341,11 @@ require("gitui").get_status()      -- structured table
 require("gitui").buffer_status()   -- { added, changed, removed } for a buffer
 ```
 
+These read only from the store and never run git, so calling them on every
+redraw is free. The branch name is available immediately; the counts arrive
+with the first `git status`. While that is in flight `busy` is true and the
+counts are zero, which is how you tell "still reading" from "nothing changed".
+
 **Telescope**:
 
 ```lua

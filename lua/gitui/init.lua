@@ -542,6 +542,11 @@ M.hunk = {
 ---
 ---Reads only from the store: it never runs git, so calling it on every
 ---statusline redraw is free.
+---
+---`branch` comes from HEAD on disk and is therefore available immediately,
+---while the counts arrive with the first `git status`. During that window
+---`busy` is true and every count is zero — that is how a consumer
+---distinguishes "still reading" from "nothing changed".
 ---@return GitUIStatusSummary
 function M.get_status()
   local store = require("gitui.state")
