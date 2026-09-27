@@ -778,6 +778,10 @@ local diff_buffers = {}
 ---@type integer[]
 local borrowed_maps = {}
 
+---Bumped for every split requested, so a slow answer that arrives after the
+---user has moved on is discarded instead of replacing a newer view.
+local split_generation = 0
+
 ---@type integer|nil
 local split_augroup = nil
 
@@ -809,7 +813,11 @@ local function split_mapped_keys()
 end
 
 ---Close any side-by-side diff this module opened.
+---
+---Also supersedes anything still loading: a split the user has closed must
+---not reappear because git answered a moment later.
 local function close_side_by_side()
+  split_generation = split_generation + 1
   -- Drop the watcher first. Left alive, it sees the windows going away, finds
   -- no split, and tears down the *replacement* being built in its place.
   if split_augroup then
@@ -836,12 +844,18 @@ local function close_side_by_side()
   split_pending = false
 end
 
+---Load one side of the comparison into a scratch buffer.
+---
+---The buffer is collected in `into` rather than in `diff_buffers`: it belongs
+---to a split that does not exist yet, and the one currently on screen must
+---stay untouched — and disposable — until this one is ready to replace it.
 ---@param repo GitRepository
 ---@param path string
 ---@param rev string
 ---@param label string
+---@param into integer[]  collects the buffer so it can be placed or discarded
 ---@param callback fun(bufnr: integer|nil)
-local function blob_buffer(repo, path, rev, label, callback)
+local function blob_buffer(repo, path, rev, label, into, callback)
   diff_api.blob(repo, rev, path, function(content, err)
     if err then
       notify.error(err)
@@ -856,7 +870,7 @@ local function blob_buffer(repo, path, rev, label, callback)
     vim.bo[bufnr].modifiable = false
     -- Inherit the real file's filetype so syntax highlighting works.
     vim.bo[bufnr].filetype = vim.filetype.match({ filename = path, buf = bufnr }) or ""
-    diff_buffers[#diff_buffers + 1] = bufnr
+    into[#into + 1] = bufnr
     callback(bufnr)
   end)
 end
@@ -1015,12 +1029,6 @@ function M.open_side_by_side(repo, path, spec, opts)
   -- Captured before `collapse_editor_area`, which closes windows and would
   -- otherwise take the one we mean to go back to with it.
   local origin_win = vim.api.nvim_get_current_win()
-  require("picked.ui.floats").close_all()
-  close_side_by_side()
-
-  if config.options.diff.split_full_width then
-    collapse_editor_area()
-  end
 
   local left_rev, right_rev = split_revisions(spec)
   if not left_rev then
@@ -1028,19 +1036,54 @@ function M.open_side_by_side(repo, path, spec, opts)
   end
   split_pending = true
 
+  -- Nothing on screen changes until the new sides have been read. Tearing the
+  -- old split down first left the windows showing whatever buffer fell into
+  -- them — usually a file opened earlier — for as long as git took to answer,
+  -- which reads as a flash of the wrong content every time the cursor moves
+  -- to another file.
+  split_generation = split_generation + 1
+  local generation = split_generation
+  ---@type integer[]
+  local loaded = {}
+
+  ---Has a newer request overtaken this one? Then drop what was loaded for it.
+  ---@return boolean
+  local function superseded()
+    if split_generation == generation then
+      return false
+    end
+    for _, bufnr in ipairs(loaded) do
+      window.delete_buffer(bufnr)
+    end
+    return true
+  end
+
   local left_label, right_label = diff_api.side_labels(spec)
   local context = { repo = repo, path = path, spec = spec }
   -- "vertical" puts the sides beside each other, which needs a `vsplit`;
   -- "horizontal" stacks them.
   local horizontal = config.options.diff.layout == "horizontal"
 
-  blob_buffer(repo, path, left_rev, left_label, function(left_bufnr)
+  blob_buffer(repo, path, left_rev, left_label, loaded, function(left_bufnr)
+    if superseded() then
+      return
+    end
     if not left_bufnr then
       split_pending = false
       return
     end
 
     local function finish(right_bufnr, use_file)
+      -- From here to the end of this function Neovim does not redraw, so the
+      -- old split is replaced by the new one in a single visible step.
+      require("picked.ui.floats").close_all()
+      close_side_by_side()
+      diff_buffers = loaded
+
+      if config.options.diff.split_full_width then
+        collapse_editor_area()
+      end
+
       local target = window.pick_editor_window()
       if target then
         vim.api.nvim_set_current_win(target)
@@ -1125,7 +1168,10 @@ function M.open_side_by_side(repo, path, spec, opts)
     end
 
     if right_rev then
-      blob_buffer(repo, path, right_rev, right_label, function(right_bufnr)
+      blob_buffer(repo, path, right_rev, right_label, loaded, function(right_bufnr)
+        if superseded() then
+          return
+        end
         if right_bufnr then
           finish(right_bufnr, false)
         else

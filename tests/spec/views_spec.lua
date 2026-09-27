@@ -495,6 +495,108 @@ describe("views", function()
       require("picked.ui.source_control").close()
     end)
 
+    it("keeps the old diff on screen until the new one is ready", function()
+      -- The split used to be torn down before git was asked for the new
+      -- sides, so switching files flashed whatever buffer fell into the
+      -- windows -- usually a file opened earlier -- until the answer came.
+      local dir = helper.init("view-no-flash")
+      for _, name in ipairs({ "a.lua", "b.lua" }) do
+        helper.write(dir, name, "one\ntwo\nthree\n")
+      end
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      for _, name in ipairs({ "a.lua", "b.lua" }) do
+        helper.write(dir, name, "one\nTWO " .. name .. "\nthree\n")
+      end
+      local repo = activate(dir)
+      sync(repo)
+
+      t.with_options({ diff = { view = "split", preview = "auto" } }, function()
+        diff_view.open(repo, { path = "a.lua", spec = { kind = "worktree" }, view = "split" })
+        t.wait_for(function()
+          return diff_view.split_is_open()
+        end, "the first split never opened")
+
+        diff_view.preview(repo, { path = "b.lua" }, "worktree")
+
+        -- Poll until the new file is up, watching for any moment with no
+        -- split on screen. There must not be one.
+        local gap = false
+        local deadline = vim.uv.now() + 4000
+        while vim.uv.now() < deadline do
+          if not diff_view.split_is_open() then
+            gap = true
+          end
+          local panes = 0
+          for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            if vim.wo[winid].diff then
+              panes = panes + 1
+            end
+          end
+          if panes == 2 and vim.api.nvim_buf_get_name(0):find("b.lua", 1, true) then
+            break
+          end
+          vim.wait(10)
+        end
+        assert.is_false(gap, "the split disappeared while the next one was loading")
+      end)
+
+      diff_view.close_side_by_side()
+    end)
+
+    it("discards previews the cursor has already moved past", function()
+      -- Three requests in flight at once used to each build their own pair of
+      -- panes as they came back, piling up windows and scratch buffers.
+      local dir = helper.init("view-supersede")
+      for _, name in ipairs({ "a.lua", "b.lua", "c.lua" }) do
+        helper.write(dir, name, "one\ntwo\nthree\n")
+      end
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      for _, name in ipairs({ "a.lua", "b.lua", "c.lua" }) do
+        helper.write(dir, name, "one\nTWO " .. name .. "\nthree\n")
+      end
+      local repo = activate(dir)
+      sync(repo)
+
+      t.with_options({ diff = { view = "split", preview = "auto" } }, function()
+        diff_view.preview(repo, { path = "a.lua" }, "worktree")
+        diff_view.preview(repo, { path = "c.lua" }, "worktree")
+        diff_view.preview(repo, { path = "b.lua" }, "worktree")
+        t.wait_for(function()
+          return diff_view.split_is_open()
+        end, "the split never opened")
+        vim.wait(600)
+
+        local panes = 0
+        for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+          if vim.wo[winid].diff then
+            panes = panes + 1
+          end
+        end
+        assert.equals(2, panes, "only the last request should have built panes")
+
+        -- A side is named "picked://<label>:<path>"; a panel's own buffer is
+        -- "picked://<name>" with no colon, which tells them apart. A worktree
+        -- diff loads one side as a blob and takes the other from disk, so
+        -- exactly one side buffer should remain.
+        local sides = vim.tbl_filter(function(bufnr)
+          local name = vim.api.nvim_buf_get_name(bufnr)
+          return vim.api.nvim_buf_is_valid(bufnr) and name:match("^picked://[^:]+:") ~= nil
+        end, vim.api.nvim_list_bufs())
+        assert.equals(
+          1,
+          #sides,
+          "superseded sides must be discarded, not left behind: "
+            .. vim.inspect(vim.tbl_map(function(bufnr)
+              return vim.api.nvim_buf_get_name(bufnr)
+            end, sides))
+        )
+      end)
+
+      diff_view.close_side_by_side()
+    end)
+
     it("takes its mappings back off the user's own buffer", function()
       -- The right-hand side of a worktree diff is the real file. `q` there is
       -- macro recording, so the mapping must not outlive the split.
