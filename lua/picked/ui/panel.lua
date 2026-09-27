@@ -10,6 +10,7 @@ local config = require("picked.config")
 local logger = require("picked.utils.logger")
 local render = require("picked.ui.render")
 local window = require("picked.ui.window")
+local winsize = require("picked.ui.winsize")
 
 local M = {}
 
@@ -188,6 +189,10 @@ function Panel:open(opts)
   else
     self.winid = window.open_sidebar(bufnr, { position = opts.position })
     self.data.width = self.data.width or window.sidebar_width()
+    -- Claim before the window is ever focused: once 'winwidth' has stretched
+    -- the sidebar, the stretched value is indistinguishable from a resize the
+    -- user asked for.
+    winsize.claim("panel:" .. self.spec.name, "winwidth", self.data.width)
     self.data.win_count = #vim.api.nvim_tabpage_list_wins(0)
   end
 
@@ -221,6 +226,7 @@ function Panel:close()
 
   local winid = self.winid
   self.winid = nil
+  winsize.release("panel:" .. self.spec.name)
 
   -- Remember where the user was so reopening lands in the same place.
   if vim.api.nvim_win_is_valid(winid) then
@@ -415,6 +421,11 @@ function Panel:enforce_width()
 
   self.data.width = self.data.width or window.sidebar_width()
 
+  -- Without this the sidebar is stretched to 'winwidth' every time it is
+  -- focused — with the common `winwidth=80` a 40-column panel became 80, and
+  -- the branch below then mistook that for a deliberate resize and kept it.
+  winsize.claim("panel:" .. self.spec.name, "winwidth", self.data.width)
+
   if wins <= 1 then
     -- Alone on screen there is nothing to take space from; do not record this
     -- width as the user's preference.
@@ -426,7 +437,14 @@ function Panel:enforce_width()
   -- Another window exists again, so a placeholder is welcome next time.
   self.data.suppress_placeholder = false
 
-  if wins == self.data.win_count and actual ~= self.data.width then
+  -- A width that exactly matches the user's 'winwidth' while the sidebar is
+  -- the current window is Neovim widening it, not the user dragging it. Only
+  -- reachable if 'winwidth' was raised after the panel opened — the claim
+  -- above prevents it otherwise — but adopting it would make the stretch
+  -- permanent, so it is worth ruling out.
+  local stretched = actual == winsize.user_value("winwidth") and vim.api.nvim_get_current_win() == self.winid
+
+  if wins == self.data.win_count and actual ~= self.data.width and not stretched then
     self.data.width = actual -- a deliberate resize
   elseif actual ~= self.data.width then
     pcall(vim.api.nvim_win_set_width, self.winid, self.data.width)

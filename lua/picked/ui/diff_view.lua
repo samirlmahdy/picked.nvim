@@ -23,6 +23,7 @@ local path_util = require("picked.utils.path")
 local store = require("picked.state")
 local text_util = require("picked.utils.text")
 local window = require("picked.ui.window")
+local winsize = require("picked.ui.winsize")
 
 local M = {}
 
@@ -652,7 +653,7 @@ function M.open(repo, opts)
     return M.open_side_by_side(repo, opts.path, opts.spec, { silent = opts.silent })
   end
 
-  if M.split_is_open() then
+  if M.split_active() then
     M.close_side_by_side()
   end
 
@@ -693,7 +694,7 @@ function M.preview(repo, entry, side)
 
   -- When the split is the configured presentation there is no single buffer
   -- to retarget, so previewing another file rebuilds it.
-  if M.split_is_open() then
+  if M.split_active() then
     if current and current.path == entry.path and current.spec.kind == kind then
       return
     end
@@ -737,7 +738,7 @@ end
 ---its purpose. Without this the diff keeps its window and the file has to be
 ---given a third one, which then never goes away.
 function M.dismiss_for_editor()
-  if M.split_is_open() then
+  if M.split_active() then
     M.close_side_by_side()
   end
   if panel and panel:is_open() then
@@ -772,12 +773,33 @@ local diff_buffers = {}
 ---@type integer|nil
 local split_augroup = nil
 
+---The two panes, once they exist. Openness is judged from these rather than
+---from `diff_buffers`, because a buffer outlives the window showing it: after
+---a plain `:close` the scratch buffers are still around, and counting them
+---reported a split that was no longer on screen.
+---@type { left: integer, right: integer, left_buf: integer }|nil
+local split_panes = nil
+
+---True between the request for a split and its windows existing. The blobs are
+---fetched asynchronously, so for a moment there are no panes to find; without
+---this a preview firing in that gap would decide no split was open and put the
+---unified view up instead.
+local split_pending = false
+
 ---Close any side-by-side diff this module opened.
 local function close_side_by_side()
+  -- Drop the watcher first. Left alive, it sees the windows going away, finds
+  -- no split, and tears down the *replacement* being built in its place.
+  if split_augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, split_augroup)
+    split_augroup = nil
+  end
   for _, bufnr in ipairs(diff_buffers) do
     window.delete_buffer(bufnr)
   end
   diff_buffers = {}
+  split_panes = nil
+  split_pending = false
 end
 
 ---@param repo GitRepository
@@ -843,13 +865,17 @@ local function balance_split(first, second)
   if not (vim.api.nvim_win_is_valid(first) and vim.api.nvim_win_is_valid(second)) then
     return
   end
-  if config.options.diff.layout == "horizontal" then
-    local total = vim.api.nvim_win_get_height(first) + vim.api.nvim_win_get_height(second)
-    pcall(vim.api.nvim_win_set_height, first, math.floor(total / 2))
-  else
-    local total = vim.api.nvim_win_get_width(first) + vim.api.nvim_win_get_width(second)
-    pcall(vim.api.nvim_win_set_width, first, math.floor(total / 2))
-  end
+  local horizontal = config.options.diff.layout == "horizontal"
+  local get = horizontal and vim.api.nvim_win_get_height or vim.api.nvim_win_get_width
+  local set = horizontal and vim.api.nvim_win_set_height or vim.api.nvim_win_set_width
+
+  local total = get(first) + get(second)
+  local half = math.floor(total / 2)
+
+  -- Claim before resizing: with 'winwidth' still in force the resize is undone
+  -- the moment it is made, and the focused pane swallows the other one.
+  winsize.claim("diff-split", horizontal and "winheight" or "winwidth", half)
+  pcall(set, first, half)
 end
 
 ---Which revisions the two sides of a split view show.
@@ -945,6 +971,7 @@ function M.open_side_by_side(repo, path, spec, opts)
   if not left_rev then
     return notify.warn("This comparison has no side-by-side form; showing the unified patch instead")
   end
+  split_pending = true
 
   local left_label, right_label = diff_api.side_labels(spec)
   local context = { repo = repo, path = path, spec = spec }
@@ -954,6 +981,7 @@ function M.open_side_by_side(repo, path, spec, opts)
 
   blob_buffer(repo, path, left_rev, left_label, function(left_bufnr)
     if not left_bufnr then
+      split_pending = false
       return
     end
 
@@ -1003,6 +1031,9 @@ function M.open_side_by_side(repo, path, spec, opts)
       -- two panes of 'winwidth' the sides cannot be exactly equal.
       balance_split(left_winid, right_winid)
 
+      split_panes = { left = left_winid, right = right_winid, left_buf = left_bufnr }
+      split_pending = false
+
       -- Opening or closing anything else makes Neovim redistribute columns,
       -- so hold the halves for as long as the split is up.
       split_augroup = vim.api.nvim_create_augroup("PickedSplitBalance", { clear = true })
@@ -1012,6 +1043,11 @@ function M.open_side_by_side(repo, path, spec, opts)
           vim.schedule(function()
             if M.split_is_open() then
               balance_split(left_winid, right_winid)
+            else
+              -- A pane was closed by hand. Drop the other one and the scratch
+              -- buffers now, so the next request for a diff starts from a
+              -- clean slate instead of a split we only believe is still up.
+              M.close_side_by_side()
             end
           end)
         end,
@@ -1031,6 +1067,8 @@ function M.open_side_by_side(repo, path, spec, opts)
       blob_buffer(repo, path, right_rev, right_label, function(right_bufnr)
         if right_bufnr then
           finish(right_bufnr, false)
+        else
+          split_pending = false
         end
       end)
     else
@@ -1039,9 +1077,32 @@ function M.open_side_by_side(repo, path, spec, opts)
   end)
 end
 
+---Is the side-by-side view on screen *now*?
+---
+---Deliberately says nothing about a split still being built: callers that must
+---also count one in flight use `split_active` below.
 ---@return boolean
 function M.split_is_open()
-  return #diff_buffers > 0
+  if not split_panes then
+    return false
+  end
+  if not (vim.api.nvim_win_is_valid(split_panes.left) and vim.api.nvim_win_is_valid(split_panes.right)) then
+    return false
+  end
+  -- A valid window is not enough: the pane may have been reused for something
+  -- else, in which case the diff is gone even though the window remains.
+  return vim.api.nvim_win_get_buf(split_panes.left) == split_panes.left_buf
+end
+
+---Is a side-by-side view on screen, or on its way there?
+---
+---The blobs are fetched asynchronously, so for a moment a split has been asked
+---for and has no windows yet. Anything deciding whether to *open* a view has
+---to count that moment, or a preview firing inside it puts the unified view up
+---over a split that is about to appear.
+---@return boolean
+function M.split_active()
+  return split_pending or M.split_is_open()
 end
 
 ---Leave diff mode and drop the scratch buffers.
@@ -1050,6 +1111,9 @@ function M.close_side_by_side()
     pcall(vim.api.nvim_del_augroup_by_id, split_augroup)
     split_augroup = nil
   end
+  -- The panes no longer need protecting from 'winwidth', so give the user
+  -- their setting back.
+  winsize.release("diff-split")
   if #diff_buffers == 0 then
     return
   end
@@ -1072,7 +1136,7 @@ end
 
 ---Switch the current diff between the unified patch and the side-by-side view.
 function M.toggle_view()
-  if M.split_is_open() then
+  if M.split_active() then
     local context = current
     M.close_side_by_side()
     if context and context.repo then

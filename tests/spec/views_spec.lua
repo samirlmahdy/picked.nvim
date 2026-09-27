@@ -374,6 +374,98 @@ describe("views", function()
       assert.is_true(math.abs(panes[1] - panes[2]) <= 1, ("panes drifted: %d vs %d"):format(panes[1], panes[2]))
     end)
 
+    it("forgets a split whose panes the user closed by hand", function()
+      -- Closing the windows never runs picked's teardown, so openness was
+      -- judged from the scratch buffers — which outlive their windows. The
+      -- split then looked open when it was not, and asking for it again
+      -- toggled to the unified view instead of bringing it back.
+      local _, repo = three_hunk_repo("view-manual-close")
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.wo[winid].diff then
+          vim.api.nvim_set_current_win(winid)
+          pcall(vim.cmd, "close")
+        end
+      end
+      vim.wait(300)
+      assert.is_false(diff_view.split_is_open(), "a split with no windows is not open")
+
+      diff_view.toggle_view()
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "asking for the split again should reopen it, not switch to unified")
+
+      local panes = {}
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.wo[winid].diff then
+          panes[#panes + 1] = vim.api.nvim_win_get_width(winid)
+        end
+      end
+      assert.equals(2, #panes, "the reopened split needs both panes")
+      assert.is_true(math.abs(panes[1] - panes[2]) <= 1, ("panes differ: %d vs %d"):format(panes[1], panes[2]))
+      diff_view.close_side_by_side()
+    end)
+
+    it("holds 'winwidth' down while the sidebar and the split need the room", function()
+      -- 'winwidth' widens whichever window is current by taking columns from
+      -- its neighbours: at 80 it stretched the sidebar to 80 columns, and the
+      -- split then had so little left that focusing one pane crushed the other
+      -- to a single column.
+      --
+      -- The stretch itself only happens with a UI attached — headless Neovim
+      -- does not re-apply 'winwidth' on window entry — so what is checked here
+      -- is the mechanism that prevents it: while picked owns fixed-size
+      -- windows the option is clamped to them, and handed back untouched
+      -- afterwards.
+      local columns, winwidth = vim.o.columns, vim.o.winwidth
+      vim.o.columns = 160
+      vim.o.winwidth = 80
+
+      local _, repo = three_hunk_repo("view-winwidth")
+      require("picked.ui.source_control").open()
+      t.wait_for(function()
+        return require("picked.ui.panel").get("source_control"):is_open()
+      end, "the sidebar never opened")
+      local sidebar = require("picked.ui.panel").get("source_control")
+
+      assert.is_true(
+        vim.o.winwidth <= require("picked.ui.window").sidebar_width(),
+        ("'winwidth' is %d, wide enough to stretch the sidebar"):format(vim.o.winwidth)
+      )
+      assert.equals(80, require("picked.ui.winsize").user_value("winwidth"), "the user's value must be remembered")
+
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+      vim.wait(250)
+
+      local panes = {}
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.wo[winid].diff then
+          panes[#panes + 1] = vim.api.nvim_win_get_width(winid)
+        end
+      end
+      assert.equals(2, #panes, "expected exactly two diff panes")
+      assert.is_true(math.abs(panes[1] - panes[2]) <= 1, ("panes differ: %d vs %d"):format(panes[1], panes[2]))
+      assert.is_true(
+        vim.o.winwidth <= panes[1],
+        ("'winwidth' is %d, wider than a pane at %d"):format(vim.o.winwidth, panes[1])
+      )
+
+      diff_view.close_side_by_side()
+      require("picked.ui.source_control").close()
+      vim.wait(200)
+      assert.equals(80, vim.o.winwidth, "the user's 'winwidth' must be handed back")
+
+      vim.o.winwidth = winwidth
+      vim.o.columns = columns
+    end)
+
     it("leaves a buffer's unsaved changes intact when it makes room", function()
       local dir, repo = three_hunk_repo("view-unsaved")
       require("picked.ui.window").open_file(dir .. "/f.lua", {})
@@ -1122,6 +1214,68 @@ describe("views", function()
       end, remaining)))
 
       local _ = buffers_before
+    end)
+  end)
+
+  describe("window minimums", function()
+    local winsize = require("picked.ui.winsize")
+
+    after_each(function()
+      winsize.reset()
+    end)
+
+    it("lowers the option to the smallest claim and restores it", function()
+      local original = vim.o.winwidth
+      vim.o.winwidth = 90
+
+      winsize.claim("sidebar", "winwidth", 40)
+      assert.equals(40, vim.o.winwidth)
+
+      winsize.claim("split", "winwidth", 25)
+      assert.equals(25, vim.o.winwidth, "the tightest claim wins")
+
+      winsize.release("split")
+      assert.equals(40, vim.o.winwidth, "releasing one claim falls back to the other")
+
+      winsize.release("sidebar")
+      assert.equals(90, vim.o.winwidth, "the user's value comes back untouched")
+
+      vim.o.winwidth = original
+    end)
+
+    it("never raises the option above what the user chose", function()
+      local original = vim.o.winwidth
+      vim.o.winwidth = 10
+
+      winsize.claim("sidebar", "winwidth", 40)
+      assert.equals(10, vim.o.winwidth, "a claim is a ceiling, not a request")
+
+      winsize.release("sidebar")
+      assert.equals(10, vim.o.winwidth)
+      vim.o.winwidth = original
+    end)
+
+    it("adopts a value the user changes while a claim is held", function()
+      local original = vim.o.winwidth
+      vim.o.winwidth = 90
+      winsize.claim("sidebar", "winwidth", 40)
+
+      -- The user changes their mind with the sidebar still open. Restoring 90
+      -- afterwards would undo a setting they had already replaced.
+      vim.o.winwidth = 60
+      winsize.claim("sidebar", "winwidth", 40)
+      assert.equals(40, vim.o.winwidth)
+      assert.equals(60, winsize.user_value("winwidth"))
+
+      winsize.release("sidebar")
+      assert.equals(60, vim.o.winwidth)
+      vim.o.winwidth = original
+    end)
+
+    it("ignores a release for a claim that was never made", function()
+      local original = vim.o.winwidth
+      winsize.release("nobody")
+      assert.equals(original, vim.o.winwidth)
     end)
   end)
 end)

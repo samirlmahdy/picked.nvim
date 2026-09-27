@@ -725,6 +725,9 @@ function M.reset()
   require("picked.state").reset()
   require("picked.git.repository").invalidate()
   require("picked.utils.events").reset()
+  -- Last, so the panels have already dropped their claims: this hands back
+  -- 'winwidth' even if one of them closed without releasing.
+  require("picked.ui.winsize").reset()
 
   initialised = false
 end
