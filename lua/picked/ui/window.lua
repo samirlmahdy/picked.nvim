@@ -336,6 +336,7 @@ end
 ---@field exclude integer[]|nil  window ids that must not be reused
 ---@field focus boolean|nil  false returns the cursor to where it started
 ---@field dismiss_floats boolean|nil  false keeps floats open (rarely wanted)
+---@field dismiss_diff boolean|nil  false keeps an open diff (used while building one)
 
 ---@param opts PickedOpenFileOpts|nil
 ---@return integer|nil winid
@@ -345,6 +346,15 @@ function M.open_file(path, opts)
   -- A float would sit on top of the file we are about to show.
   if opts.dismiss_floats ~= false then
     require("picked.ui.floats").close_all()
+  end
+
+  -- So would a diff, and it is holding the window the file wants. Letting it
+  -- keep that window forces the file into a third one, which then persists.
+  if opts.dismiss_diff ~= false then
+    local ok, diff_view = pcall(require, "picked.ui.diff_view")
+    if ok then
+      diff_view.dismiss_for_editor()
+    end
   end
 
   local path_util = require("picked.utils.path")

@@ -193,6 +193,10 @@ require("picked").setup({ prefix = "<leader>gui" })
 diff hands your editor window back with the buffer that was in it — picked
 borrows the window, it does not take it.
 
+Opening a file with `<CR>` takes that window back from the diff, so the two
+never pile up: you get the sidebar and one editor window, showing whichever of
+the file or its diff you last asked for.
+
 Floating views get out of the way on their own. Opening a diff, a file or a
 commit from the history dismisses the float that launched it, so the thing you
 asked for is never hidden underneath it, and only one picked float is ever on
@@ -215,6 +219,29 @@ Visual mode works in the panel: select several rows and press `s`, `u` or `x`.
 In the side-by-side view `]c` / `[c` are Neovim's own diff motions, so folding
 and `do` / `dp` work too. picked installs no mappings on your real file buffer
 there — `:PickedDiffView` returns to the unified patch from either pane.
+
+### Unified or side-by-side
+
+Three ways to choose, depending on how permanent you want it:
+
+```vim
+<C-v>              " toggle the diff you are looking at, either direction
+:PickedDiffView    " same, and works from the split's real-file pane
+:PickedDiff!       " open straight into side-by-side
+```
+
+```lua
+require("picked").setup({
+  diff = {
+    view = "unified",    -- "unified" | "split" — what a diff opens as
+    layout = "vertical", -- "vertical" | "horizontal" — how the split is arranged
+  },
+})
+```
+
+`view = "split"` applies to previews too, so moving down the file list shows
+each change side by side. Both presentations support `]c` / `[c`; only the
+unified one can stage, because hunk and line staging need a patch.
 
 ### Conflicts
 

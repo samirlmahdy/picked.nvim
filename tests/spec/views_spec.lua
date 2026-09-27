@@ -276,6 +276,36 @@ describe("views", function()
       config.options.diff.layout = previous
     end)
 
+    it("hands the editor window to the file when one is opened", function()
+      -- <CR> means "take me to the file". If the diff keeps its window the
+      -- file is forced into a third one, which then never goes away.
+      local dir, repo = three_hunk_repo("view-handover")
+      open_unified(repo)
+      local before = #vim.api.nvim_tabpage_list_wins(0)
+
+      require("picked.ui.window").open_file(dir .. "/f.lua", {})
+      vim.wait(300)
+
+      assert.is_false(require("picked.ui.panel").get("diff"):is_open(), "the diff should step aside")
+      assert.equals(before, #vim.api.nvim_tabpage_list_wins(0), "no extra window should appear")
+    end)
+
+    it("retargets a split preview instead of stacking one", function()
+      local _, repo = three_hunk_repo("view-split-preview")
+
+      t.with_options({ diff = { view = "split", preview = "auto" } }, function()
+        diff_view.preview(repo, { path = "f.lua" }, "worktree")
+        t.wait_for(function()
+          return diff_view.split_is_open()
+        end, "the split preview never opened")
+        local count = #vim.api.nvim_tabpage_list_wins(0)
+
+        diff_view.preview(repo, { path = "f.lua" }, "index")
+        vim.wait(600)
+        assert.equals(count, #vim.api.nvim_tabpage_list_wins(0), "previewing again must not add windows")
+      end)
+    end)
+
     it("falls back to the unified patch when there is nothing to split", function()
       local _, repo = three_hunk_repo("view-fallback")
       -- A whole-tree diff has no single file, so no side-by-side form.

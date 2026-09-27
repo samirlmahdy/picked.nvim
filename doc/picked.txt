@@ -568,10 +568,19 @@ Two presentations:
   Side by side  Where reading happens. Built on Neovim's own |:diffthis|, so
               folding, |]c|, |do| and |dp| behave normally.
 
-`<C-v>` toggles between them, `:PickedDiff!` opens straight into the split, and
-`diff.view` sets which one a diff opens in by default. `]c`/`[c` jump between
-hunks in both. `diff.layout` chooses whether the split is side by side or
-stacked. See |picked-config-preview| and the `diff` options.
+Choosing between them:
+
+  <C-v>              toggle the diff in front of you, either direction
+  :PickedDiffView    the same, and the way back from the split's real-file
+                     pane, where picked maps nothing
+  :PickedDiff!       open straight into the side-by-side view
+  diff.view          "unified" or "split" - what a diff opens as
+  diff.layout        "vertical" or "horizontal" - how the split is arranged
+
+`diff.view` applies to previews too, so with "split" set, moving down the file
+list shows each change side by side. `]c`/`[c` jump between hunks in both
+presentations; only the unified one can stage, because hunk and line staging
+need a patch to hand to `git apply`.
 
 The title always names both sides. There is no ambiguous "the diff": a file
 that is both staged and modified has two distinct comparisons, and `<Tab>`

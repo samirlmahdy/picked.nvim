@@ -73,6 +73,25 @@ function M.with_config(opts, fn)
   end
 end
 
+---Temporarily patch live configuration fields.
+---
+---Unlike `with_config` this merges into the options already in force rather
+---than rebuilding them from defaults, so a describe-level `setup` survives.
+---The restore runs even when `fn` throws — a test that fails partway through
+---must not reconfigure every test after it.
+---@param patch table
+---@param fn fun()
+function M.with_options(patch, fn)
+  local config = require("picked.config")
+  local saved = vim.deepcopy(config.options)
+  config.options = vim.tbl_deep_extend("force", config.options, patch)
+  local ok, err = pcall(fn)
+  config.options = saved
+  if not ok then
+    error(err, 0)
+  end
+end
+
 ---Answer `vim.ui.input` automatically.
 ---
 ---The default implementation blocks on `vim.fn.input`, which would hang a

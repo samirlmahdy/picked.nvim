@@ -621,6 +621,7 @@ end
 ---@field from_panel PickedPanel|nil
 ---@field focus boolean|nil
 ---@field view "unified"|"split"|nil  defaults to `config.diff.view`
+---@field silent boolean|nil  suppress the summary notification
 
 ---Open a diff.
 ---
@@ -648,7 +649,7 @@ function M.open(repo, opts)
       loading = false,
       entry = opts.entry,
     }
-    return M.open_side_by_side(repo, opts.path, opts.spec)
+    return M.open_side_by_side(repo, opts.path, opts.spec, { silent = opts.silent })
   end
 
   if M.split_is_open() then
@@ -689,6 +690,17 @@ function M.preview(repo, entry, side)
   end
 
   local kind = side == "index" and "index" or "worktree"
+
+  -- When the split is the configured presentation there is no single buffer
+  -- to retarget, so previewing another file rebuilds it.
+  if M.split_is_open() then
+    if current and current.path == entry.path and current.spec.kind == kind then
+      return
+    end
+    current = { repo = repo, spec = { kind = kind }, path = entry.path, diffs = {}, entry = entry }
+    return M.open_side_by_side(repo, entry.path, { kind = kind }, { silent = true })
+  end
+
   local is_open = panel ~= nil and panel:is_open()
 
   if not is_open then
@@ -696,12 +708,14 @@ function M.preview(repo, entry, side)
       return
     end
     -- Opening without focus: the panel keeps the cursor, the editor area
-    -- shows the diff.
+    -- shows the diff. Silent, because a preview fires on every cursor move
+    -- and a notification per keystroke is noise, not feedback.
     return M.open(repo, {
       path = entry.path,
       spec = { kind = kind },
       entry = entry,
       focus = false,
+      silent = true,
     })
   end
 
@@ -715,6 +729,20 @@ function M.preview(repo, entry, side)
   current.entry = entry
   current.spec = { kind = kind }
   load(panel)
+end
+
+---Step aside because something else wants the editor area.
+---
+---Pressing <CR> on a file means "take me to the file"; the preview has served
+---its purpose. Without this the diff keeps its window and the file has to be
+---given a third one, which then never goes away.
+function M.dismiss_for_editor()
+  if M.split_is_open() then
+    M.close_side_by_side()
+  end
+  if panel and panel:is_open() then
+    panel:close()
+  end
 end
 
 ---@return boolean
@@ -851,7 +879,11 @@ end
 ---@param repo GitRepository
 ---@param path string
 ---@param spec GitDiffSpec
-function M.open_side_by_side(repo, path, spec)
+---@param opts { silent: boolean|nil }|nil  silent suppresses the summary
+---       notification, which would otherwise fire on every cursor move when
+---       the split is being used as the preview
+function M.open_side_by_side(repo, path, spec, opts)
+  opts = opts or {}
   require("picked.ui.floats").close_all()
   close_side_by_side()
 
@@ -878,7 +910,8 @@ function M.open_side_by_side(repo, path, spec)
       end
 
       if use_file then
-        window.open_file(path_util.join(repo.root, path), { cmd = "edit" })
+        -- Opting out: this call is part of *building* the diff, not leaving it.
+        window.open_file(path_util.join(repo.root, path), { cmd = "edit", dismiss_diff = false })
       else
         vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), right_bufnr)
       end
@@ -910,9 +943,14 @@ function M.open_side_by_side(repo, path, spec)
       pcall(vim.cmd, "normal! gg")
       pcall(vim.cmd, "normal! ]c")
 
-      notify.info(
-        ("%s ↔ %s   ]c/[c jump hunks   :PickedDiffView returns to the unified patch"):format(left_label, right_label)
-      )
+      if not opts.silent then
+        notify.info(
+          ("%s ↔ %s   ]c/[c jump hunks   :PickedDiffView returns to the unified patch"):format(
+            left_label,
+            right_label
+          )
+        )
+      end
     end
 
     if right_rev then
