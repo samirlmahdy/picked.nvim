@@ -491,8 +491,10 @@ automatically. Otherwise the built-in fuzzy picker is used.
 
 **GitHub Copilot CLI** — when the `copilot` executable is installed and
 authenticated, press `<C-g>` in the commit editor (or run
-`:PickedCommitSuggest`) to generate a message from the staged diff. The result
-is inserted for review and is never committed automatically. picked denies the
+`:PickedCommitSuggest`) to generate a message from the staged diff. The hint
+beside the key spins while Copilot is thinking, and the same progress reaches
+`require("picked").statusline()`. The result is inserted for review and is
+never committed automatically. picked denies the
 Copilot process shell, file, and web tools; it can only return text. Disable the
 action with `commit = { copilot = false }`.
 

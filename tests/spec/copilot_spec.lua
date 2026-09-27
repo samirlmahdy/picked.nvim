@@ -115,6 +115,117 @@ describe("GitHub Copilot commit-message suggestions", function()
     end)
   end)
 
+  describe("the commit editor while it waits", function()
+    local commit = require("picked.ui.commit")
+    local store = require("picked.state")
+
+    ---The hint row that carries the spinner.
+    ---@return string
+    local function hint()
+      for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].filetype == "picked-commit-info" then
+          for _, line in ipairs(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)) do
+            if line:find("Copilot") or line:find("suggest message") then
+              return vim.trim(line)
+            end
+          end
+        end
+      end
+      return "<no hint>"
+    end
+
+    it("spins, then puts the hint back", function()
+      local dir = helper.simple()
+      helper.write(dir, "feature.lua", "return 'picked'\n")
+      helper.git(dir, { "add", "feature.lua" })
+      local repo = assert(repository.detect(dir))
+      store.ensure(repo)
+      store.set_active(repo)
+      require("picked.state.refresh").now(repo, {})
+      t.wait_for(function()
+        local state = store.get(repo.root)
+        return state ~= nil and state.status ~= nil
+      end, "status never loaded")
+
+      local original_available, original_run = copilot.available, copilot._run
+      copilot.available = function()
+        return true
+      end
+      -- Slow enough to turn a few frames.
+      copilot._run = function(_, _, _, callback)
+        vim.defer_fn(function()
+          callback("feat: add a feature", nil)
+        end, 700)
+      end
+
+      commit.open(repo, {})
+      vim.wait(600)
+      assert.is_not_nil(hint():find("suggest message", 1, true), "expected the idle hint, got: " .. hint())
+
+      commit.suggest()
+      local frames = {}
+      for _ = 1, 8 do
+        vim.wait(90)
+        local current = hint()
+        if frames[#frames] ~= current then
+          frames[#frames + 1] = current
+        end
+      end
+      assert.is_true(#frames >= 2, "the spinner should animate, saw: " .. vim.inspect(frames))
+      for _, frame in ipairs(frames) do
+        -- Never animation alone: the words say what is happening.
+        assert.is_not_nil(frame:find("asking Copilot", 1, true), "every frame should still read: " .. frame)
+      end
+
+      t.wait_for(function()
+        return hint():find("suggest message", 1, true) ~= nil
+      end, "the hint never went back to idle")
+
+      commit.close()
+      vim.wait(200)
+      copilot.available, copilot._run = original_available, original_run
+    end)
+
+    it("stops the spinner when the editor closes mid-suggestion", function()
+      -- A libuv timer outlives the buffer it was drawing into; left running it
+      -- fires at a dead session for the rest of the Neovim run.
+      local dir = helper.simple()
+      helper.write(dir, "feature.lua", "return 'picked'\n")
+      helper.git(dir, { "add", "feature.lua" })
+      local repo = assert(repository.detect(dir))
+      store.ensure(repo)
+      store.set_active(repo)
+      require("picked.state.refresh").now(repo, {})
+      t.wait_for(function()
+        local state = store.get(repo.root)
+        return state ~= nil and state.status ~= nil
+      end, "status never loaded")
+
+      local original_available, original_run = copilot.available, copilot._run
+      copilot.available = function()
+        return true
+      end
+      local answer
+      copilot._run = function(_, _, _, callback)
+        answer = callback -- never called: the user gives up first
+      end
+
+      commit.open(repo, {})
+      vim.wait(400)
+      commit.suggest()
+      vim.wait(150)
+
+      commit.close()
+      vim.wait(200)
+      assert.is_not_nil(answer, "the suggestion should have been started")
+      -- Answering now must not resurrect anything.
+      answer("feat: too late", nil)
+      vim.wait(200)
+
+      copilot.available, copilot._run = original_available, original_run
+    end)
+  end)
+
   it("refuses to invent a message when nothing is staged", function()
     local dir = helper.simple()
     local repo = assert(repository.detect(dir))
