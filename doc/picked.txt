@@ -459,6 +459,13 @@ diff belongs to the list that opened it.
 action. The byte limit bounds the staged diff placed in the prompt; oversized
 diffs are truncated with an explicit warning in the prompt.
 
+Keep the CLI current: `npm i -g @github/copilot@latest`. An outdated one asks
+for models the API no longer serves and then retries the rejected call for
+ever instead of exiting. picked watches the output and gives up as soon as it
+sees that, reporting what happened rather than sitting on "asking Copilot…"
+until `copilot_timeout` expires — but the update is the actual fix. The same
+applies to a CLI that is not signed in.
+
                                                          *picked-config-signs*
 >lua
     signs = {

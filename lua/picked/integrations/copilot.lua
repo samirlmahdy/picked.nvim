@@ -85,62 +85,175 @@ local function detect_capabilities(callback)
   end
 end
 
+---Errors the CLI reports without ever exiting.
+---
+---It retries a failed model call forever, so waiting for the process to end
+---means waiting for the timeout with nothing on screen but "asking Copilot…".
+---Each entry pairs the text to watch for with what the user should do about
+---it, because "the CLI exited unsuccessfully" helps nobody.
+---@type { pattern: string, reason: string, hint: string }[]
+local FATAL = {
+  {
+    pattern = "model_not_supported",
+    reason = "Copilot rejected the model this CLI asked for.",
+    hint = "The CLI is usually too old for the models the API still serves. "
+      .. "Update it — `npm i -g @github/copilot@latest` — then try again.",
+  },
+  {
+    pattern = "Model call failed",
+    reason = "Copilot could not reach a model.",
+    hint = "Run `copilot` in a terminal to check authentication and model access.",
+  },
+  {
+    pattern = "[Nn]ot authenticated",
+    reason = "Copilot is not authenticated.",
+    hint = "Run `copilot` in a terminal and sign in, then try again.",
+  },
+  {
+    pattern = "[Nn]ot logged in",
+    reason = "Copilot is not signed in.",
+    hint = "Run `copilot` in a terminal and sign in, then try again.",
+  },
+  {
+    -- The flags below drift between releases; a rejected one would otherwise
+    -- look like an empty suggestion.
+    pattern = "[Uu]nknown option",
+    reason = "This Copilot CLI does not accept one of the options picked passes.",
+    hint = "Update the CLI — `npm i -g @github/copilot@latest` — and report it if it persists.",
+  },
+}
+
+---@param text string
+---@return { reason: string, hint: string }|nil
+local function fatal_in(text)
+  for _, entry in ipairs(FATAL) do
+    if text:find(entry.pattern) then
+      return { reason = entry.reason, hint = entry.hint }
+    end
+  end
+  return nil
+end
+
 ---@param prompt string
 ---@param cwd string
 ---@param timeout integer
 ---@param callback fun(message: string|nil, err: GitError|nil)
 function M._run(prompt, cwd, timeout, callback)
   detect_capabilities(function(supported)
-    local ok, handle = pcall(vim.system, M._command(prompt, supported), {
+    local settled = false
+    local handle = nil
+    -- Streamed rather than collected by `vim.system`, so that a fatal line can
+    -- be acted on as it arrives. That means `result.stdout` is empty and the
+    -- suggestion has to be rebuilt from these.
+    local out_chunks = {}
+    local err_chunks = {}
+
+    ---@param message string|nil
+    ---@param err table|nil
+    local function settle(message, err)
+      if settled then
+        return
+      end
+      settled = true
+      vim.schedule(function()
+        callback(message, err)
+      end)
+    end
+
+    ---Watch the stream for a failure the CLI will not exit on, and stop
+    ---waiting the moment one appears.
+    ---@param data string|nil
+    ---@param is_error boolean
+    local function consume(data, is_error)
+      if not data or settled then
+        return
+      end
+      local into = is_error and err_chunks or out_chunks
+      into[#into + 1] = data
+      local found = fatal_in(data)
+      if found then
+        if handle then
+          pcall(function()
+            handle:kill(15)
+          end)
+        end
+        settle(nil, failure("copilot_failed", "Copilot could not suggest a message", found.reason, found.hint, data))
+      end
+    end
+
+    local ok, started = pcall(vim.system, M._command(prompt, supported), {
       cwd = cwd,
       text = true,
       timeout = timeout,
+      -- No stdin: a CLI that decides to ask for confirmation should fail
+      -- rather than wait for an answer that cannot come.
+      stdin = false,
+      stdout = function(_, data)
+        consume(data, false)
+      end,
+      stderr = function(_, data)
+        consume(data, true)
+      end,
     }, function(result)
-      vim.schedule(function()
-        if result.code ~= 0 then
-          local detail = vim.trim(result.stderr or "")
-          callback(
-            nil,
-            failure(
-              "copilot_failed",
-              "Copilot could not suggest a message",
-              detail ~= "" and detail or "The Copilot CLI exited unsuccessfully.",
-              "Run `copilot` in a terminal to check authentication and model access.",
-              detail
-            )
-          )
-          return
-        end
+      if settled then
+        return
+      end
 
-        local message = clean(result.stdout or "")
-        if message == "" then
-          callback(
-            nil,
-            failure(
-              "copilot_empty",
-              "Copilot returned no message",
-              "The suggestion was empty.",
-              "Try again, or write the message manually."
-            )
-          )
-          return
-        end
-        callback(message, nil)
-      end)
-    end)
+      local stdout = table.concat(out_chunks, "")
+      -- The CLI prints its errors on stdout, so a failure explanation is in
+      -- whichever stream had something to say.
+      local detail = vim.trim(table.concat(err_chunks, "") .. stdout)
 
-    if not ok then
-      vim.schedule(function()
-        callback(
+      if result.code ~= 0 then
+        local found = fatal_in(detail)
+        -- `vim.system` reports its own timeout as a signal, not an exit code.
+        local timed_out = result.signal ~= 0 and detail == ""
+        settle(
           nil,
           failure(
             "copilot_failed",
-            "Copilot could not start",
-            tostring(handle),
-            "Run `copilot` in a terminal to check the installation."
+            "Copilot could not suggest a message",
+            found and found.reason
+              or (
+                timed_out and ("Copilot did not answer within %ds."):format(math.floor(timeout / 1000))
+                or (detail ~= "" and detail or "The Copilot CLI exited unsuccessfully.")
+              ),
+            found and found.hint or "Run `copilot` in a terminal to check authentication and model access.",
+            detail
           )
         )
-      end)
+        return
+      end
+
+      local message = clean(stdout)
+      if message == "" then
+        settle(
+          nil,
+          failure(
+            "copilot_empty",
+            "Copilot returned no message",
+            "The suggestion was empty.",
+            "Try again, or write the message manually.",
+            detail
+          )
+        )
+        return
+      end
+      settle(message, nil)
+    end)
+
+    if ok then
+      handle = started
+    else
+      settle(
+        nil,
+        failure(
+          "copilot_failed",
+          "Copilot could not start",
+          tostring(started),
+          "Run `copilot` in a terminal to check the installation."
+        )
+      )
     end
   end)
 end
