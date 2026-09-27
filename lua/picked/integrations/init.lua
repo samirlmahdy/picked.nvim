@@ -107,6 +107,7 @@ function M.detected()
     ["which-key.nvim"] = available("which-key") ~= nil,
     ["mini.icons"] = available("mini.icons") ~= nil,
     ["nvim-web-devicons"] = available("nvim-web-devicons") ~= nil,
+    ["GitHub Copilot CLI"] = vim.fn.executable("copilot") == 1,
   }
 end
 

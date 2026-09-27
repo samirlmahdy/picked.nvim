@@ -222,6 +222,12 @@ local defaults = {
     --- Sign commits. nil = inherit git config (recommended).
     ---@type boolean|nil
     sign = nil,
+    --- Offer commit-message suggestions through GitHub Copilot CLI.
+    copilot = true,
+    --- Maximum staged-diff bytes sent to Copilot.
+    copilot_max_diff = 100000,
+    --- Maximum time to wait for a suggestion, in milliseconds.
+    copilot_timeout = 120000,
   },
 
   --- Push/pull/fetch behaviour.
@@ -407,6 +413,7 @@ local defaults = {
       submit = { "<C-CR>", "<C-s>" },
       submit_push = "<C-p>",
       amend = "<C-a>",
+      suggest = "<C-g>",
       cancel = "<C-c>",
     },
 

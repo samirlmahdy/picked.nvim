@@ -102,7 +102,9 @@ first use — but it is how configuration is applied.
      list. See |picked-config-preview| to change or disable that.
   4. `s` stages, `u` unstages, `x` discards. Inside the diff, `s` stages one
      hunk, or exactly the lines selected in visual mode.
-  5. `c` opens the commit editor. Write a message, then `<C-s>` or `:w`.
+  5. `c` opens the commit editor. Write a message, or press `<C-g>` to ask the
+     optional GitHub Copilot CLI for an editable suggestion, then `<C-s>` or
+     `:w`.
   6. `p` pushes.
   7. `?` shows every mapping, generated from your configuration.
 
@@ -142,6 +144,10 @@ first use — but it is how configuration is applied.
                                                                 *:PickedCommit*
 :PickedCommit[!] [msg]   Open the commit editor. With [msg], commit immediately
                         with that message. With [!], amend.
+
+                                                     *:PickedCommitSuggest*
+:PickedCommitSuggest     Suggest an editable commit message from the staged
+                        diff using GitHub Copilot CLI.
 
                                                                   *:PickedPush*
 :PickedPush[!]           Push. With [!], force-push using --force-with-lease
@@ -358,6 +364,7 @@ CONFLICTS                                             *picked-keymaps-conflict*
 
 COMMIT EDITOR                                           *picked-keymaps-commit*
 
+  <C-g>         Suggest an editable message with GitHub Copilot CLI
   <C-CR> <C-s>  Commit. `:w` also works and is immune to terminal flow control.
   <C-p>         Commit and push
   <C-a>         Toggle amend
@@ -428,6 +435,22 @@ an explicit opt-in to an unsafe mode. >lua
 
 `true` is accepted as a synonym for "auto". `preview_delay` debounces cursor
 movement so holding `j` does not queue a diff per row.
+                                                        *picked-config-commit*
+>lua
+    commit = {
+      subject_length = 72,
+      body_length = 0,
+      show_diff = true,
+      sign = nil,
+      copilot = true,
+      copilot_max_diff = 100000,
+      copilot_timeout = 120000,
+    }
+<
+`copilot` enables the commit editor's optional GitHub Copilot CLI suggestion
+action. The byte limit bounds the staged diff placed in the prompt; oversized
+diffs are truncated with an explicit warning in the prompt.
+
                                                          *picked-config-signs*
 >lua
     signs = {
@@ -891,6 +914,15 @@ Otherwise the built-in fuzzy picker is used. Set
 WHICH-KEY                                      *picked-integration-which-key*
 
 Prefix group names are registered when which-key is present.
+
+GITHUB COPILOT CLI                            *picked-integration-copilot*
+
+When the `copilot` executable is installed and authenticated, `<C-g>` in the
+commit editor or `:PickedCommitSuggest` asks it to describe the staged diff.
+The returned message is inserted into the editor for review and is never
+committed automatically. picked denies the Copilot process shell, file and web
+tools; it can only return text. Set `commit.copilot = false` to disable this
+action.
 
 ICONS
 

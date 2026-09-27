@@ -33,6 +33,7 @@ local M = {}
 ---@field push boolean
 ---@field paths string[]|nil
 ---@field closing boolean
+---@field suggesting boolean
 
 ---@type PickedCommitSession|nil
 local session = nil
@@ -169,6 +170,12 @@ local function render_info(current)
   canvas:row(nil):add(first(keys.submit) or "<C-s>", "PickedKey"):add("  commit", "PickedHint")
   canvas:row(nil):add(first(keys.submit_push) or "<C-p>", "PickedKey"):add("  commit and push", "PickedHint")
   canvas:row(nil):add(first(keys.amend) or "<C-a>", "PickedKey"):add("  toggle amend", "PickedHint")
+  if config.options.commit.copilot then
+    canvas
+      :row(nil)
+      :add(first(keys.suggest) or "<C-g>", "PickedKey")
+      :add(current.suggesting and "  asking Copilot…" or "  suggest message", "PickedHint")
+  end
   canvas:row(nil):add(first(keys.cancel) or "<C-c>", "PickedKey"):add("  cancel", "PickedHint")
 
   canvas:apply(current.info_bufnr, vim.api.nvim_create_namespace("picked_commit_info"))
@@ -295,6 +302,13 @@ local function install_keymaps(current)
     M.toggle_amend()
   end)
 
+  if config.options.commit.copilot then
+    map("suggest", function()
+      vim.cmd("stopinsert")
+      M.suggest()
+    end)
+  end
+
   map("cancel", function()
     vim.cmd("stopinsert")
     close_session(true)
@@ -411,6 +425,7 @@ function M.open(repo, opts)
     push = opts.push or false,
     paths = opts.paths,
     closing = false,
+    suggesting = false,
   }
 
   install_keymaps(session)
@@ -471,6 +486,49 @@ function M.open(repo, opts)
     once = true,
     callback = unsubscribe,
   })
+end
+
+---Ask GitHub Copilot CLI for a message describing the staged diff. The result
+---is inserted into the real commit buffer and remains fully editable.
+function M.suggest()
+  local current = session
+  if not current then
+    notify.warn("Open the commit editor before asking for a suggestion.")
+    return
+  end
+  if current.suggesting then
+    return
+  end
+
+  current.suggesting = true
+  render_info(current)
+  notify.info("Asking GitHub Copilot for a commit message…")
+
+  require("picked.integrations.copilot").suggest(current.repo, {
+    paths = current.paths,
+    max_diff = config.options.commit.copilot_max_diff,
+    timeout = config.options.commit.copilot_timeout,
+  }, function(message, err)
+    if session ~= current or not vim.api.nvim_buf_is_valid(current.bufnr) then
+      return
+    end
+    current.suggesting = false
+    render_info(current)
+    if err then
+      notify.error(err)
+      return
+    end
+
+    local lines = vim.split(message or "", "\n", { plain = true })
+    vim.api.nvim_buf_set_lines(current.bufnr, 0, -1, false, lines)
+    vim.bo[current.bufnr].modified = true
+    decorate(current.bufnr)
+    if vim.api.nvim_win_is_valid(current.winid) then
+      vim.api.nvim_set_current_win(current.winid)
+      pcall(vim.api.nvim_win_set_cursor, current.winid, { 1, #(lines[1] or "") })
+    end
+    notify.info("Copilot suggestion inserted — edit it or undo to restore your draft")
+  end)
 end
 
 ---Switch the open session between committing and amending, reloading the

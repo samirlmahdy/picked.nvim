@@ -47,7 +47,8 @@ with destructive operations by default.
   its whole commit block highlighted in both panes and a colour per commit
 
 **Operations**
-- Commit in a real `gitcommit` buffer, amend, commit & push
+- Commit in a real `gitcommit` buffer, amend, commit & push, with optional
+  GitHub Copilot CLI message suggestions
 - Push, pull (merge / rebase / ff-only), fetch, prune
 - Branch create, switch, rename, delete, merge, rebase, set upstream
 - Stash push/apply/pop/drop/branch
@@ -74,6 +75,9 @@ with destructive operations by default.
 Nerd fonts are optional. picked probes for glyph support and falls back to ASCII
 automatically; the UI is designed to be readable either way, and never
 communicates state with colour alone.
+
+GitHub Copilot CLI is optional and is only needed for AI commit-message
+suggestions.
 
 ---
 
@@ -125,7 +129,9 @@ change any of the configuration below.
    lines with `+`/`-`, in green and red — while the cursor stays in the list.
 4. `s` stages, `u` unstages, `x` discards. In the diff, `s` stages one hunk,
    or exactly the lines you select in visual mode.
-5. `c` opens the commit editor; write a message and press `<C-s>` (or `:w`).
+5. `c` opens the commit editor; write a message, or press `<C-g>` to ask the
+   optional GitHub Copilot CLI for an editable suggestion. Press `<C-s>` (or
+   `:w`) to commit.
 6. `p` pushes. `?` shows every key, generated from *your* configuration.
 
 If you would rather browse the list without diffs opening, set
@@ -219,6 +225,16 @@ Visual mode works in the panel: select several rows and press `s`, `u` or `x`.
 | `<C-v>` | Switch presentation (unified patch ↔ side-by-side) |
 | `<CR>` | Open the real file at this line |
 
+### Commit editor
+
+| Key | Action |
+| --- | --- |
+| `<C-g>` | Suggest an editable message with GitHub Copilot CLI |
+| `<C-s>` / `:w` | Commit |
+| `<C-p>` | Commit and push |
+| `<C-a>` | Toggle amend |
+| `<C-c>` / `<Esc>` | Cancel and keep the message as a draft |
+
 In the side-by-side view `]c` / `[c` are Neovim's own diff motions, so folding
 and `do` / `dp` work too. picked installs no mappings on your real file buffer
 there — `:PickedDiffView` returns to the unified patch from either pane.
@@ -267,6 +283,7 @@ unified one can stage, because hunk and line staging need a patch.
 | `:PickedDiff [all\|staged][!]` | Diff (`!` uses the side-by-side view) |
 | `:PickedDiffView` | Toggle unified ↔ side-by-side |
 | `:PickedCommit[!] [message]` | Commit (`!` amends) |
+| `:PickedCommitSuggest` | Suggest a message with GitHub Copilot CLI |
 | `:PickedPush[!]` | Push (`!` force-pushes with lease) |
 | `:PickedPull`, `:PickedFetch[!]` | Pull / fetch (`!` fetches all remotes) |
 | `:PickedLog[!]`, `:PickedBranch`, `:PickedStash` | History / branches / stashes |
@@ -362,6 +379,9 @@ require("picked").setup({
     body_length = 0,
     show_diff = true,
     sign = nil,               -- nil inherits git's commit.gpgsign
+    copilot = true,           -- optional Copilot CLI message suggestions
+    copilot_max_diff = 100000,
+    copilot_timeout = 120000,
   },
 
   remote = {
@@ -443,6 +463,13 @@ require("telescope").load_extension("picked")
 automatically. Otherwise the built-in fuzzy picker is used.
 
 **which-key** — prefix group names are registered when which-key is present.
+
+**GitHub Copilot CLI** — when the `copilot` executable is installed and
+authenticated, press `<C-g>` in the commit editor (or run
+`:PickedCommitSuggest`) to generate a message from the staged diff. The result
+is inserted for review and is never committed automatically. picked denies the
+Copilot process shell, file, and web tools; it can only return text. Disable the
+action with `commit = { copilot = false }`.
 
 ### Events
 

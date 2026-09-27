@@ -131,6 +131,10 @@ command("PickedCommit", function(args)
   picked().commit({ amend = args.bang })
 end, { nargs = "*", bang = true, desc = "Commit (! amends; an argument is used as the message)" })
 
+command("PickedCommitSuggest", function()
+  require("picked.ui.commit").suggest()
+end, { desc = "Suggest a commit message with GitHub Copilot CLI" })
+
 command("PickedPush", function(args)
   if args.bang then
     picked().force_push()

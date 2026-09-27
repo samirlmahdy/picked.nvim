@@ -722,6 +722,35 @@ describe("views", function()
       commit.close()
       commit.draft = nil
     end)
+
+    it("inserts a Copilot suggestion for review", function()
+      local dir = helper.simple()
+      helper.write(dir, "new.txt", "hello\n")
+      helper.git(dir, { "add", "-A" })
+      local repo = activate(dir)
+      sync(repo)
+
+      local provider = require("picked.integrations.copilot")
+      local original = provider.suggest
+      provider.suggest = function(_, _, callback)
+        vim.schedule(function()
+          callback("feat: add greeting\n\nExplain the greeting.", nil)
+        end)
+      end
+
+      commit.open(repo, {})
+      commit.suggest()
+      t.wait_for(function()
+        return text_of(vim.api.nvim_get_current_buf()):find("feat: add greeting", 1, true) ~= nil
+      end, "the suggested message was not inserted")
+
+      provider.suggest = original
+      local text = text_of(vim.api.nvim_get_current_buf())
+      assert.is_not_nil(text:find("Explain the greeting", 1, true))
+      assert.is_true(vim.bo[vim.api.nvim_get_current_buf()].modified)
+      commit.close()
+      commit.draft = nil
+    end)
   end)
 
   describe("log view", function()
