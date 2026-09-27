@@ -754,6 +754,43 @@ describe("views", function()
       vim.o.columns = columns
     end)
 
+    it("does not record a width Neovim handed out mid-rebuild", function()
+      -- The recorded width is what the split sizes itself against, so a wrong
+      -- value is permanent: the panes come back small and stay small for the
+      -- rest of the session. While picked is opening and closing windows,
+      -- Neovim redistributes space ('equalalways' does it on every close) and
+      -- none of those intermediate widths is a choice the user made.
+      local columns = vim.o.columns
+      vim.o.columns = 160
+
+      require("picked.ui.source_control").open()
+      t.wait_for(function()
+        return require("picked.ui.panel").get("source_control"):is_open()
+      end, "the sidebar never opened")
+      local sidebar = require("picked.ui.panel").get("source_control")
+      local recorded = sidebar.data.width
+      local panel_lib = require("picked.ui.panel")
+
+      -- Same window count as last time round, so the adoption branch is live.
+      sidebar.data.win_count = #vim.api.nvim_tabpage_list_wins(0)
+      panel_lib.suspend_adoption()
+      vim.api.nvim_win_set_width(sidebar.winid, recorded + 30)
+      sidebar:enforce_width()
+      assert.equals(recorded, sidebar.data.width, "a width from a rebuild must not become the preference")
+
+      -- Once the rearrangement is over, a deliberate drag is honoured again.
+      vim.wait(50)
+      assert.is_true(panel_lib.adoption_allowed(), "the suspension should lift on the next tick")
+      sidebar.data.win_count = #vim.api.nvim_tabpage_list_wins(0)
+      vim.api.nvim_win_set_width(sidebar.winid, recorded + 8)
+      sidebar:enforce_width()
+      assert.equals(recorded + 8, sidebar.data.width, "a deliberate resize should still stick")
+
+      sidebar.data.width = recorded
+      require("picked.ui.source_control").close()
+      vim.o.columns = columns
+    end)
+
     it("takes its mappings back off the user's own buffer", function()
       -- The right-hand side of a worktree diff is the real file. `q` there is
       -- macro recording, so the mapping must not outlive the split.

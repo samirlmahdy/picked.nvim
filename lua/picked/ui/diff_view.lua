@@ -1108,6 +1108,11 @@ function M.open_side_by_side(repo, path, spec, opts)
     end
 
     local function finish(right_bufnr, use_file)
+      -- Windows are about to open and close, and Neovim redistributes width
+      -- as they do. The sidebar must not record any of those intermediate
+      -- sizes as the width the user wants.
+      panel_lib.suspend_adoption()
+
       -- From here to the end of this function Neovim does not redraw, so the
       -- old split is replaced by the new one in a single visible step.
       require("picked.ui.floats").close_all()

@@ -43,6 +43,34 @@ Panel.__index = Panel
 ---@type table<string, PickedPanel>
 local registry = {}
 
+---Depth of "picked is rearranging windows right now".
+---
+---A sidebar whose width changed while nothing else did is normally the user
+---dragging it, and is adopted as their preference. That inference is only
+---sound when picked is not itself opening and closing windows: during a
+---rebuild Neovim redistributes space — 'equalalways' hands the sidebar a
+---share every time a window closes — and adopting one of those intermediate
+---widths makes it permanent, which the split then sizes itself against for
+---the rest of the session.
+local rearranging = 0
+
+---Hold off width adoption until the end of the current rearrangement.
+---
+---Increments now and releases on the next tick. `enforce_width` runs from a
+---scheduled autocommand, so a resize caused between these two points is
+---already queued behind this call and sees the suspension.
+function M.suspend_adoption()
+  rearranging = rearranging + 1
+  vim.schedule(function()
+    rearranging = math.max(0, rearranging - 1)
+  end)
+end
+
+---@return boolean
+function M.adoption_allowed()
+  return rearranging == 0
+end
+
 ---@param spec PickedPanelSpec
 ---@return PickedPanel
 function M.new(spec)
@@ -444,7 +472,7 @@ function Panel:enforce_width()
   -- permanent, so it is worth ruling out.
   local stretched = actual == winsize.user_value("winwidth") and vim.api.nvim_get_current_win() == self.winid
 
-  if wins == self.data.win_count and actual ~= self.data.width and not stretched then
+  if wins == self.data.win_count and actual ~= self.data.width and not stretched and M.adoption_allowed() then
     self.data.width = actual -- a deliberate resize
   elseif actual ~= self.data.width then
     pcall(vim.api.nvim_win_set_width, self.winid, self.data.width)
