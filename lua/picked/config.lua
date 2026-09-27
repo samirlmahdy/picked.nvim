@@ -131,6 +131,18 @@ local defaults = {
     ---@type "vertical"|"horizontal"
     layout = "vertical",
 
+    --- Give the side-by-side view the whole editor area, so each side gets
+    --- half of the space left over once the sidebar has taken its share.
+    ---
+    --- Without this the two panes compete with any other file windows you
+    --- had open and end up a third of the width each, which is too narrow to
+    --- read a diff in. Other ordinary windows are closed to make room.
+    ---
+    --- Only the windows close — the buffers stay loaded with any unsaved
+    --- changes, which is what 'hidden' means. Set false to keep every window
+    --- and let Neovim divide the space between all of them.
+    split_full_width = true,
+
     --- What moving the cursor onto a file in the Source Control panel does.
     ---
     ---   "auto"   open the diff in the editor area, keeping the cursor in the

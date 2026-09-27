@@ -72,6 +72,11 @@ require("picked").setup({
     -- `]c`/`[c` jump between hunks in both.
     view = "unified", -- "unified" | "split"
     layout = "vertical", -- orientation of the split view
+
+    -- Give the side-by-side view the whole editor area, so each side gets
+    -- half of the width the sidebar leaves. Without it the panes compete
+    -- with any other open file windows and end up a third each.
+    split_full_width = true,
   },
 
   --- Inline signs ------------------------------------------------------------

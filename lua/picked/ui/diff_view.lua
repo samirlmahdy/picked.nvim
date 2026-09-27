@@ -769,6 +769,9 @@ end
 ---@type integer[]
 local diff_buffers = {}
 
+---@type integer|nil
+local split_augroup = nil
+
 ---Close any side-by-side diff this module opened.
 local function close_side_by_side()
   for _, bufnr in ipairs(diff_buffers) do
@@ -800,6 +803,53 @@ local function blob_buffer(repo, path, rev, label, callback)
     diff_buffers[#diff_buffers + 1] = bufnr
     callback(bufnr)
   end)
+end
+
+---Close ordinary editor windows so the split has the area to itself.
+---
+---A diff read two columns at a time needs width. Competing with the file
+---windows that happened to be open leaves each side a third of the screen,
+---which is not enough to read.
+---
+---Only windows are closed, never buffers: with 'hidden' — Neovim's default —
+---a closed window leaves its buffer loaded and its unsaved changes intact,
+---and under 'nohidden' the `force = false` close simply refuses and the
+---window stays. Floats and picked's own panels are never touched.
+---@return integer|nil kept  the editor window that survived, if any
+local function collapse_editor_area()
+  local editors = {}
+  for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_config(winid).relative == "" then
+      local filetype = vim.bo[vim.api.nvim_win_get_buf(winid)].filetype
+      if not filetype:match("^picked") then
+        editors[#editors + 1] = winid
+      end
+    end
+  end
+
+  for index = 2, #editors do
+    pcall(vim.api.nvim_win_close, editors[index], false)
+  end
+  return editors[1]
+end
+
+---Give the two sides an equal share of whatever space they jointly occupy.
+---
+---`wincmd =` would divide the space between *every* window instead, which is
+---how the panes ended up narrower than the file window beside them.
+---@param first integer
+---@param second integer
+local function balance_split(first, second)
+  if not (vim.api.nvim_win_is_valid(first) and vim.api.nvim_win_is_valid(second)) then
+    return
+  end
+  if config.options.diff.layout == "horizontal" then
+    local total = vim.api.nvim_win_get_height(first) + vim.api.nvim_win_get_height(second)
+    pcall(vim.api.nvim_win_set_height, first, math.floor(total / 2))
+  else
+    local total = vim.api.nvim_win_get_width(first) + vim.api.nvim_win_get_width(second)
+    pcall(vim.api.nvim_win_set_width, first, math.floor(total / 2))
+  end
 end
 
 ---Which revisions the two sides of a split view show.
@@ -887,6 +937,10 @@ function M.open_side_by_side(repo, path, spec, opts)
   require("picked.ui.floats").close_all()
   close_side_by_side()
 
+  if config.options.diff.split_full_width then
+    collapse_editor_area()
+  end
+
   local left_rev, right_rev = split_revisions(spec)
   if not left_rev then
     return notify.warn("This comparison has no side-by-side form; showing the unified patch instead")
@@ -938,10 +992,32 @@ function M.open_side_by_side(repo, path, spec, opts)
         map_split_buffer(right_bufnr, context)
       end
 
+
+
       -- Land on the right-hand (newer, editable) side, at the first change.
       vim.api.nvim_set_current_win(right_winid)
       pcall(vim.cmd, "normal! gg")
       pcall(vim.cmd, "normal! ]c")
+
+      -- Balance *after* focusing: 'winwidth' expands whichever window becomes
+      -- current to its minimum, which would silently undo an earlier split.
+      -- Neovim still enforces that minimum, so on a terminal too narrow for
+      -- two panes of 'winwidth' the sides cannot be exactly equal.
+      balance_split(left_winid, right_winid)
+
+      -- Opening or closing anything else makes Neovim redistribute columns,
+      -- so hold the halves for as long as the split is up.
+      split_augroup = vim.api.nvim_create_augroup("PickedSplitBalance", { clear = true })
+      vim.api.nvim_create_autocmd({ "WinResized", "WinClosed", "WinNew", "VimResized" }, {
+        group = split_augroup,
+        callback = function()
+          vim.schedule(function()
+            if M.split_is_open() then
+              balance_split(left_winid, right_winid)
+            end
+          end)
+        end,
+      })
 
       if not opts.silent then
         notify.info(
@@ -972,6 +1048,10 @@ end
 
 ---Leave diff mode and drop the scratch buffers.
 function M.close_side_by_side()
+  if split_augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, split_augroup)
+    split_augroup = nil
+  end
   if #diff_buffers == 0 then
     return
   end

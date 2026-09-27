@@ -252,11 +252,19 @@ Three ways to choose, depending on how permanent you want it:
 ```lua
 require("picked").setup({
   diff = {
-    view = "unified",    -- "unified" | "split" — what a diff opens as
-    layout = "vertical", -- "vertical" | "horizontal" — how the split is arranged
+    view = "unified",        -- "unified" | "split" — what a diff opens as
+    layout = "vertical",     -- "vertical" | "horizontal" — how it is arranged
+    split_full_width = true, -- give the split the whole editor area
   },
 })
 ```
+
+The two sides each get **half the width left after the sidebar**, and stay that
+way as windows come and go. `split_full_width` is what makes that possible: it
+closes other ordinary file windows first, because otherwise the panes compete
+with them and end up a third of the screen each — too narrow to read a diff in.
+Only windows close; buffers stay loaded with any unsaved changes. Set it to
+`false` to keep every window and let Neovim divide the space.
 
 `view = "split"` applies to previews too, so moving down the file list shows
 each change side by side. Both presentations support `]c` / `[c`; only the

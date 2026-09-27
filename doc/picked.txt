@@ -599,6 +599,25 @@ Choosing between them:
   :PickedDiff!       open straight into the side-by-side view
   diff.view          "unified" or "split" - what a diff opens as
   diff.layout        "vertical" or "horizontal" - how the split is arranged
+  diff.split_full_width
+                     give the split the whole editor area (default true)
+
+                                                 *picked-config-split-width*
+The two sides each take half of whatever width the sidebar leaves, and are
+held there as windows come and go — Neovim otherwise redistributes columns on
+every split and close, and the two drift apart.
+
+`diff.split_full_width` is what makes an even half possible. Other ordinary
+file windows are closed first, because two panes competing with them end up a
+third of the screen each, which is too narrow to read a diff in. Only windows
+are closed: with 'hidden' — Neovim's default — the buffers stay loaded and any
+unsaved changes survive, and under 'nohidden' a modified buffer's window
+refuses to close and simply stays. Floats and picked's own panels are never
+touched. Set it false to keep every window and let Neovim divide the space.
+
+One limit worth knowing: 'winwidth' (20 by default) expands whichever window
+holds the cursor to at least that width, so on a terminal too narrow for two
+panes of 'winwidth' the sides cannot be exactly equal.
 
 `diff.view` applies to previews too, so with "split" set, moving down the file
 list shows each change side by side. `]c`/`[c` jump between hunks in both

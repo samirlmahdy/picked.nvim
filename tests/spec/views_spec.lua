@@ -306,6 +306,92 @@ describe("views", function()
       end)
     end)
 
+    it("gives each side half the width left after the sidebar", function()
+      -- Wide enough that 'winwidth' (20 by default) is not the binding
+      -- constraint; below 2 * winwidth Neovim cannot split evenly at all.
+      local columns = vim.o.columns
+      vim.o.columns = 160
+
+      local _, repo = three_hunk_repo("view-halves")
+      require("picked.ui.source_control").open()
+      t.wait_for(function()
+        return require("picked.ui.panel").get("source_control"):is_open()
+      end, "the sidebar never opened")
+
+      -- Two file windows already competing for the editor area: without the
+      -- collapse each diff pane ends up a third of the width.
+      require("picked.ui.window").open_file(vim.fn.getcwd() .. "/README.md", {})
+      vim.cmd("vsplit")
+      vim.wait(150)
+
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+      vim.wait(250)
+
+      local panes = {}
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.wo[winid].diff then
+          panes[#panes + 1] = vim.api.nvim_win_get_width(winid)
+        end
+      end
+      assert.equals(2, #panes, "expected exactly two diff panes")
+      assert.is_true(math.abs(panes[1] - panes[2]) <= 1, ("panes differ: %d vs %d"):format(panes[1], panes[2]))
+
+      -- Together they should hold everything the sidebar left behind.
+      local sidebar = require("picked.ui.panel").get("source_control")
+      local remaining = vim.o.columns - vim.api.nvim_win_get_width(sidebar.winid) - 2
+      assert.is_true(
+        panes[1] + panes[2] >= remaining - 1,
+        ("panes total %d, expected about %d"):format(panes[1] + panes[2], remaining)
+      )
+
+      require("picked.ui.source_control").close()
+      vim.o.columns = columns
+    end)
+
+    it("keeps the two sides balanced when the layout changes", function()
+      local _, repo = three_hunk_repo("view-rebalance")
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+      vim.wait(200)
+
+      vim.cmd("vsplit")
+      vim.wait(300)
+      vim.cmd("close")
+      vim.wait(300)
+
+      local panes = {}
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.wo[winid].diff then
+          panes[#panes + 1] = vim.api.nvim_win_get_width(winid)
+        end
+      end
+      assert.equals(2, #panes)
+      assert.is_true(math.abs(panes[1] - panes[2]) <= 1, ("panes drifted: %d vs %d"):format(panes[1], panes[2]))
+    end)
+
+    it("leaves a buffer's unsaved changes intact when it makes room", function()
+      local dir, repo = three_hunk_repo("view-unsaved")
+      require("picked.ui.window").open_file(dir .. "/f.lua", {})
+      local bufnr = vim.api.nvim_get_current_buf()
+      vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { "an unsaved edit" })
+      assert.is_true(vim.bo[bufnr].modified)
+
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+
+      -- The window may go; the buffer and its edits must not.
+      assert.is_true(vim.api.nvim_buf_is_valid(bufnr), "the buffer should still exist")
+      assert.is_true(vim.bo[bufnr].modified, "unsaved changes must survive")
+      vim.bo[bufnr].modified = false
+    end)
+
     it("falls back to the unified patch when there is nothing to split", function()
       local _, repo = three_hunk_repo("view-fallback")
       -- A whole-tree diff has no single file, so no side-by-side form.
