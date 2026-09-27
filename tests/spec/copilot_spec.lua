@@ -151,11 +151,12 @@ describe("GitHub Copilot commit-message suggestions", function()
       copilot.available = function()
         return true
       end
-      -- Slow enough to turn a few frames.
+      -- The answer is withheld until this test asks for it. Timing the stub
+      -- instead races the sampling loop below on a fast machine, and the last
+      -- sample catches the hint already back at idle.
+      local answer
       copilot._run = function(_, _, _, callback)
-        vim.defer_fn(function()
-          callback("feat: add a feature", nil)
-        end, 700)
+        answer = callback
       end
 
       commit.open(repo, {})
@@ -177,6 +178,8 @@ describe("GitHub Copilot commit-message suggestions", function()
         assert.is_not_nil(frame:find("asking Copilot", 1, true), "every frame should still read: " .. frame)
       end
 
+      assert.is_not_nil(answer, "the suggestion should have been started")
+      answer("feat: add a feature", nil)
       t.wait_for(function()
         return hint():find("suggest message", 1, true) ~= nil
       end, "the hint never went back to idle")
