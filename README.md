@@ -603,8 +603,12 @@ These are genuinely not implemented, rather than partially implemented:
 ```bash
 ./scripts/test.sh              # the whole suite
 ./scripts/test.sh status_spec  # one file
-stylua lua/ tests/ plugin/
+./scripts/fmt.sh               # format
+./scripts/fmt.sh --check       # exactly what CI checks
 ```
+
+`fmt.sh` uses a `stylua` already on your PATH, and otherwise fetches one into
+`.tests/` rather than installing anything system wide.
 
 Tests create real temporary repositories and run real git. If you touch a
 parser, add a case to the relevant `*_spec.lua` with the exact bytes git
