@@ -200,7 +200,13 @@ require("picked").setup({ prefix = "<leader>gui" })
 
 `q` closes whichever picked pane you are in, including the sidebar. Dismissing a
 diff hands your editor window back with the buffer that was in it — picked
-borrows the window, it does not take it.
+borrows the window, it does not take it. Closing the sidebar closes the
+side-by-side split too: the diff belongs to the list that opened it.
+
+Previews are not debounced. `preview_delay` is 0, so the diff is requested on
+the cursor move itself; answers you have already scrolled past are thrown away
+as they arrive. Set it to a number of milliseconds if you would rather trade
+that responsiveness for fewer git calls.
 
 Opening a file with `<CR>` takes that window back from the diff, so the two
 never pile up: you get the sidebar and one editor window, showing whichever of
@@ -362,7 +368,7 @@ require("picked").setup({
     --   "follow" only retarget a diff that is already open
     --   false    nothing; `d` opens the diff on demand
     preview = "auto",
-    preview_delay = 120,
+    preview_delay = 0,
     view = "unified",         -- "unified" | "split"; <C-v> toggles
     layout = "vertical",      -- orientation of the split view
   },

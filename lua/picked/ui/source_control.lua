@@ -1032,6 +1032,13 @@ local function get_panel()
       { key = "commit", label = "commit" },
       { key = "help", label = "help" },
     },
+    on_close = function()
+      -- The diff belongs to the list that opened it. Leaving the two panes
+      -- behind after the panel goes means closing the sidebar only makes the
+      -- screen busier, and the panes are then diffing against a list that is
+      -- no longer there.
+      require("picked.ui.diff_view").close_side_by_side()
+    end,
     on_cursor = function(_, item)
       if not config.options.diff.preview then
         return
