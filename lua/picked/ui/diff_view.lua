@@ -650,7 +650,10 @@ function M.open(repo, opts)
       loading = false,
       entry = opts.entry,
     }
-    return M.open_side_by_side(repo, opts.path, opts.spec, { silent = opts.silent })
+    -- `focus` travels with it: the unified view honours it via `panel:open`,
+    -- and the split must do the same or previewing would yank the cursor out
+    -- of the list the user is browsing.
+    return M.open_side_by_side(repo, opts.path, opts.spec, { silent = opts.silent, focus = opts.focus })
   end
 
   if M.split_active() then
@@ -699,7 +702,7 @@ function M.preview(repo, entry, side)
       return
     end
     current = { repo = repo, spec = { kind = kind }, path = entry.path, diffs = {}, entry = entry }
-    return M.open_side_by_side(repo, entry.path, { kind = kind }, { silent = true })
+    return M.open_side_by_side(repo, entry.path, { kind = kind }, { silent = true, focus = false })
   end
 
   local is_open = panel ~= nil and panel:is_open()
@@ -770,6 +773,11 @@ end
 ---@type integer[]
 local diff_buffers = {}
 
+---Buffers that are not ours but carry our mappings for as long as the split
+---is up: the right-hand side of a worktree diff is the user's real file.
+---@type integer[]
+local borrowed_maps = {}
+
 ---@type integer|nil
 local split_augroup = nil
 
@@ -786,6 +794,20 @@ local split_panes = nil
 ---unified view up instead.
 local split_pending = false
 
+---Every key `map_split_buffer` installs, so they can be taken off a buffer
+---that was only ever lent to us.
+---@return string[]
+local function split_mapped_keys()
+  local keys = config.options.keymaps.diff
+  local all = { "q" }
+  for _, lhs in ipairs({ keys.toggle_view, keys.toggle_side }) do
+    for _, key in ipairs(type(lhs) == "table" and lhs or { lhs }) do
+      all[#all + 1] = key
+    end
+  end
+  return all
+end
+
 ---Close any side-by-side diff this module opened.
 local function close_side_by_side()
   -- Drop the watcher first. Left alive, it sees the windows going away, finds
@@ -794,6 +816,18 @@ local function close_side_by_side()
     pcall(vim.api.nvim_del_augroup_by_id, split_augroup)
     split_augroup = nil
   end
+  -- Give the user their own keys back before anything else: `q` is macro
+  -- recording, and leaving it shadowed in a file buffer would outlast the
+  -- diff entirely.
+  for _, bufnr in ipairs(borrowed_maps) do
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      for _, lhs in ipairs(split_mapped_keys()) do
+        pcall(vim.keymap.del, "n", lhs, { buffer = bufnr })
+      end
+    end
+  end
+  borrowed_maps = {}
+
   for _, bufnr in ipairs(diff_buffers) do
     window.delete_buffer(bufnr)
   end
@@ -915,8 +949,16 @@ end
 ---a one-way door.
 ---@param bufnr integer
 ---@param context { repo: GitRepository, path: string, spec: GitDiffSpec }
-local function map_split_buffer(bufnr, context)
+---@param borrowed boolean|nil  true when `bufnr` is the user's own file buffer
+---       rather than one of picked's scratch sides. Those mappings shadow the
+---       user's own keys — `q` is macro recording — so they are recorded and
+---       removed again when the split closes.
+local function map_split_buffer(bufnr, context, borrowed)
   local keys = config.options.keymaps.diff
+
+  if borrowed then
+    borrowed_maps[#borrowed_maps + 1] = bufnr
+  end
 
   local function map(lhs, rhs, desc)
     if not lhs then
@@ -945,6 +987,13 @@ local function map_split_buffer(bufnr, context)
 
   map("q", function()
     M.close_side_by_side()
+    -- Back to the list that opened it. Closing a preview should return the
+    -- cursor to where the user was browsing, not leave it in whatever window
+    -- happened to inherit the space.
+    local sidebar = panel_lib.get("source_control")
+    if sidebar and sidebar:is_open() then
+      sidebar:focus()
+    end
   end, "close the split view")
 end
 
@@ -955,11 +1004,17 @@ end
 ---@param repo GitRepository
 ---@param path string
 ---@param spec GitDiffSpec
----@param opts { silent: boolean|nil }|nil  silent suppresses the summary
----       notification, which would otherwise fire on every cursor move when
----       the split is being used as the preview
+---@param opts { silent: boolean|nil, focus: boolean|nil }|nil
+---       silent suppresses the summary notification, which would otherwise
+---       fire on every cursor move when the split is being used as the
+---       preview. focus = false builds the split and leaves the cursor where
+---       it was, which is what browsing a file list wants: the diff appears
+---       beside the list without the list losing the cursor.
 function M.open_side_by_side(repo, path, spec, opts)
   opts = opts or {}
+  -- Captured before `collapse_editor_area`, which closes windows and would
+  -- otherwise take the one we mean to go back to with it.
+  local origin_win = vim.api.nvim_get_current_win()
   require("picked.ui.floats").close_all()
   close_side_by_side()
 
@@ -1016,11 +1071,10 @@ function M.open_side_by_side(repo, path, spec, opts)
       )
 
       map_split_buffer(left_bufnr, context)
-      if not use_file then
-        map_split_buffer(right_bufnr, context)
-      end
+      map_split_buffer(use_file and vim.api.nvim_win_get_buf(right_winid) or right_bufnr, context, use_file)
 
-      -- Land on the right-hand (newer, editable) side, at the first change.
+      -- Start on the right-hand (newer, editable) side, at the first change,
+      -- whether or not the cursor is going to stay there.
       vim.api.nvim_set_current_win(right_winid)
       pcall(vim.cmd, "normal! gg")
       pcall(vim.cmd, "normal! ]c")
@@ -1033,6 +1087,13 @@ function M.open_side_by_side(repo, path, spec, opts)
 
       split_panes = { left = left_winid, right = right_winid, left_buf = left_bufnr }
       split_pending = false
+
+      -- Hand the cursor back to whatever asked for the diff. Browsing a file
+      -- list must not drag the cursor into the preview it opens; only an
+      -- explicit "open this" does that.
+      if opts.focus == false and vim.api.nvim_win_is_valid(origin_win) and origin_win ~= right_winid then
+        vim.api.nvim_set_current_win(origin_win)
+      end
 
       -- Opening or closing anything else makes Neovim redistribute columns,
       -- so hold the halves for as long as the split is up.
@@ -1092,6 +1153,28 @@ function M.split_is_open()
   -- A valid window is not enough: the pane may have been reused for something
   -- else, in which case the diff is gone even though the window remains.
   return vim.api.nvim_win_get_buf(split_panes.left) == split_panes.left_buf
+end
+
+---Put the cursor in the split, if one is already showing this file.
+---
+---This is what makes <CR> mean "take me into the diff I can see" while merely
+---moving down the file list leaves the cursor in the list. Returns false when
+---there is nothing to move into, so the caller can fall back to opening the
+---file.
+---@param path string|nil
+---@return boolean focused
+function M.focus_split(path)
+  if not (M.split_is_open() and split_panes) then
+    return false
+  end
+  if path and not (current and current.path == path) then
+    return false
+  end
+  if not vim.api.nvim_win_is_valid(split_panes.right) then
+    return false
+  end
+  vim.api.nvim_set_current_win(split_panes.right)
+  return true
 end
 
 ---Is a side-by-side view on screen, or on its way there?

@@ -480,6 +480,14 @@ local function open_entry(panel, item, cmd)
     return require("picked.ui.conflict").open(state.repo, item.entry.path)
   end
 
+  -- A side-by-side preview of this very file is already on screen, and <CR>
+  -- means "take me there". Opening the file instead would tear the diff down
+  -- and put a third window in its place, which is not what the user is
+  -- looking at. The explicit split/vsplit/tab variants still open the file.
+  if cmd == "edit" and require("picked.ui.diff_view").focus_split(item.entry.path) then
+    return
+  end
+
   local path_util = require("picked.utils.path")
   window.open_file(path_util.join(state.repo.root, item.entry.path), {
     cmd = cmd,

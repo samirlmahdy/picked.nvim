@@ -615,14 +615,18 @@ unsaved changes survive, and under 'nohidden' a modified buffer's window
 refuses to close and simply stays. Floats and picked's own panels are never
 touched. Set it false to keep every window and let Neovim divide the space.
 
-One limit worth knowing: 'winwidth' (20 by default) expands whichever window
-holds the cursor to at least that width, so on a terminal too narrow for two
-panes of 'winwidth' the sides cannot be exactly equal.
+'winwidth' widens whichever window holds the cursor by taking columns from
+its neighbours, which would stretch the sidebar and squeeze one side of the
+diff. While picked holds windows at a fixed size it lowers the option to fit
+them, and restores your value the moment it no longer needs to. A value
+smaller than the panes is left alone.
 
 `diff.view` applies to previews too, so with "split" set, moving down the file
-list shows each change side by side. `]c`/`[c` jump between hunks in both
-presentations; only the unified one can stage, because hunk and line staging
-need a patch to hand to `git apply`.
+list shows each change side by side. The cursor stays in the list while you
+browse; <CR> moves it into the diff, and `q` in either pane closes the split
+and puts it back on the file you were looking at. `]c`/`[c` jump between hunks
+in both presentations; only the unified one can stage, because hunk and line
+staging need a patch to hand to `git apply`.
 
 The title always names both sides. There is no ambiguous "the diff": a file
 that is both staged and modified has two distinct comparisons, and `<Tab>`

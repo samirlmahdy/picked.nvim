@@ -466,6 +466,62 @@ describe("views", function()
       vim.o.columns = columns
     end)
 
+    it("previews without taking the cursor out of the list", function()
+      -- Moving down a file list must not move the cursor with the preview, or
+      -- the next `j` lands in the diff instead of on the next file.
+      local _, repo = three_hunk_repo("view-preview-focus")
+      require("picked.ui.source_control").open()
+      t.wait_for(function()
+        return require("picked.ui.panel").get("source_control"):is_open()
+      end, "the sidebar never opened")
+      local sidebar = require("picked.ui.panel").get("source_control")
+      sidebar:focus()
+
+      t.with_options({ diff = { view = "split", preview = "auto" } }, function()
+        diff_view.preview(repo, { path = "f.lua" }, "worktree")
+        t.wait_for(function()
+          return diff_view.split_is_open()
+        end, "the split preview never opened")
+        vim.wait(200)
+
+        assert.equals(sidebar.winid, vim.api.nvim_get_current_win(), "the cursor should still be in the list")
+
+        -- <CR> is the explicit "take me there".
+        assert.is_true(diff_view.focus_split("f.lua"), "focus_split should find the open split")
+        assert.is_true(vim.wo[vim.api.nvim_get_current_win()].diff, "the cursor should now be in a diff pane")
+      end)
+
+      diff_view.close_side_by_side()
+      require("picked.ui.source_control").close()
+    end)
+
+    it("takes its mappings back off the user's own buffer", function()
+      -- The right-hand side of a worktree diff is the real file. `q` there is
+      -- macro recording, so the mapping must not outlive the split.
+      local dir, repo = three_hunk_repo("view-borrowed-maps")
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+
+      local file = vim.fn.bufnr(dir .. "/f.lua")
+      assert.is_true(file > 0, "the file buffer should be loaded as the right-hand side")
+
+      local function maps_q()
+        for _, map in ipairs(vim.api.nvim_buf_get_keymap(file, "n")) do
+          if map.lhs == "q" then
+            return true
+          end
+        end
+        return false
+      end
+      assert.is_true(maps_q(), "q should close the split while it is open")
+
+      diff_view.close_side_by_side()
+      vim.wait(200)
+      assert.is_false(maps_q(), "q must be the user's own key again once the split is gone")
+    end)
+
     it("leaves a buffer's unsaved changes intact when it makes room", function()
       local dir, repo = three_hunk_repo("view-unsaved")
       require("picked.ui.window").open_file(dir .. "/f.lua", {})

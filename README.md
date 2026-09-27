@@ -267,8 +267,16 @@ Only windows close; buffers stay loaded with any unsaved changes. Set it to
 `false` to keep every window and let Neovim divide the space.
 
 `view = "split"` applies to previews too, so moving down the file list shows
-each change side by side. Both presentations support `]c` / `[c`; only the
-unified one can stage, because hunk and line staging need a patch.
+each change side by side. The cursor stays in the list while you browse;
+`<CR>` moves it into the diff, and `q` in either pane closes the split and
+returns the cursor to the file you were on. Both presentations support `]c` /
+`[c`; only the unified one can stage, because hunk and line staging need a
+patch.
+
+`'winwidth'` would otherwise fight this — it widens the focused window at its
+neighbours' expense, stretching the sidebar and crushing one pane — so picked
+lowers it to fit while it holds those windows and hands your value back
+afterwards.
 
 ### Conflicts
 
