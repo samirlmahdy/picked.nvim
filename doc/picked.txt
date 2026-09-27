@@ -421,7 +421,7 @@ an explicit opt-in to an unsafe mode. >lua
       ignore_whitespace = false,
       layout = "vertical",
       preview = "auto",
-      preview_delay = 120,
+      preview_delay = 0,
     }
 <
                                                        *picked-config-preview*
@@ -433,8 +433,16 @@ an explicit opt-in to an unsafe mode. >lua
   "follow"  Only retarget a diff view that is already open; never open one.
   false     Nothing. The diff opens on demand with `d`.
 
-`true` is accepted as a synonym for "auto". `preview_delay` debounces cursor
-movement so holding `j` does not queue a diff per row.
+`true` is accepted as a synonym for "auto". `preview_delay` is 0 by default,
+meaning no timer at all: the preview is requested on the cursor move itself,
+which is what makes moving down the list feel immediate. Answers the cursor
+has already moved past are discarded as they arrive, so a fast scroll costs
+extra `git cat-file` calls rather than a queue of views to sit through. Set it
+to a number of milliseconds to debounce instead, if that churn matters on a
+large repository.
+
+Closing the Source Control panel closes the side-by-side split with it: the
+diff belongs to the list that opened it.
                                                         *picked-config-commit*
 >lua
     commit = {

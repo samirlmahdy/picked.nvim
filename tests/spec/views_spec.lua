@@ -597,17 +597,112 @@ describe("views", function()
       diff_view.close_side_by_side()
     end)
 
-    it("takes its mappings back off the user's own buffer", function()
-      -- The right-hand side of a worktree diff is the real file. `q` there is
-      -- macro recording, so the mapping must not outlive the split.
-      local dir, repo = three_hunk_repo("view-borrowed-maps")
+    it("closes the split when the panel that opened it goes", function()
+      local _, repo = three_hunk_repo("view-panel-close")
+      require("picked.ui.source_control").open()
+      t.wait_for(function()
+        return require("picked.ui.panel").get("source_control"):is_open()
+      end, "the sidebar never opened")
+
       diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
       t.wait_for(function()
         return diff_view.split_is_open()
       end, "the split never opened")
 
-      local file = vim.fn.bufnr(dir .. "/f.lua")
-      assert.is_true(file > 0, "the file buffer should be loaded as the right-hand side")
+      require("picked.ui.panel").get("source_control"):close()
+      vim.wait(300)
+      assert.is_false(diff_view.split_is_open(), "the split should go with the list that opened it")
+
+      local panes = 0
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.wo[winid].diff then
+          panes = panes + 1
+        end
+      end
+      assert.equals(0, panes, "no pane should be left in diff mode")
+    end)
+
+    it("closes the split when the panel window is closed directly", function()
+      -- `:q` in the sidebar does not go through Panel:close, so the teardown
+      -- has to hang off WinClosed as well.
+      local _, repo = three_hunk_repo("view-panel-wq")
+      require("picked.ui.source_control").open()
+      t.wait_for(function()
+        return require("picked.ui.panel").get("source_control"):is_open()
+      end, "the sidebar never opened")
+
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+
+      local sidebar = require("picked.ui.panel").get("source_control")
+      sidebar:focus()
+      vim.cmd("close")
+      vim.wait(300)
+      assert.is_false(diff_view.split_is_open(), "closing the window must tear the split down too")
+    end)
+
+    it("requests the preview on the cursor move itself", function()
+      -- preview_delay = 0 means no timer: the request must already be in
+      -- flight when the autocommand returns, not one tick later.
+      local _, repo = three_hunk_repo("view-no-debounce")
+      require("picked.ui.source_control").open()
+      t.wait_for(function()
+        return require("picked.ui.panel").get("source_control"):is_open()
+      end, "the sidebar never opened")
+      local sidebar = require("picked.ui.panel").get("source_control")
+
+      -- The handler is installed when the panel's buffer is built, reading
+      -- `preview_delay` then; the default it was built with is the 0 under
+      -- test. `diff.preview` and `diff.view` are read at fire time, so those
+      -- can still be set here.
+      assert.equals(0, require("picked.config").options.diff.preview_delay, "the default must stay undebounced")
+
+      local row
+      t.wait_for(function()
+        for index, line in ipairs(vim.api.nvim_buf_get_lines(sidebar.bufnr, 0, -1, false)) do
+          if line:find("f.lua", 1, true) then
+            row = index
+            return true
+          end
+        end
+        return false
+      end, "f.lua never appeared in the panel")
+
+      t.with_options({ diff = { view = "split", preview = "auto" } }, function()
+        sidebar:focus()
+        sidebar:set_cursor(row)
+        vim.api.nvim_exec_autocmds("CursorMoved", { buffer = sidebar.bufnr })
+        -- No wait: with no timer the request is already in flight when the
+        -- autocommand returns.
+        assert.is_true(diff_view.split_active(), "the preview should be under way already")
+      end)
+
+      diff_view.close_side_by_side()
+      require("picked.ui.source_control").close()
+    end)
+
+    it("takes its mappings back off the user's own buffer", function()
+      -- The right-hand side of a worktree diff is the real file. `q` there is
+      -- macro recording, so the mapping must not outlive the split.
+      local _, repo = three_hunk_repo("view-borrowed-maps")
+      diff_view.open(repo, { path = "f.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+
+      -- Found through the pane rather than by path: on macOS the temporary
+      -- directory is reached through a symlink, so the buffer's name and the
+      -- path used to create it need not match.
+      local file
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local bufnr = vim.api.nvim_win_get_buf(winid)
+        if vim.wo[winid].diff and not vim.api.nvim_buf_get_name(bufnr):find("^picked://") then
+          file = bufnr
+        end
+      end
+      assert.is_not_nil(file, "the file buffer should be loaded as the right-hand side")
 
       local function maps_q()
         for _, map in ipairs(vim.api.nvim_buf_get_keymap(file, "n")) do

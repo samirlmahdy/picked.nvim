@@ -154,7 +154,12 @@ local defaults = {
     --- `true` is accepted as a synonym for "auto".
     ---@type "auto"|"follow"|boolean
     preview = "auto",
-    preview_delay = 120,
+    -- 0 means the preview fires on the cursor move itself, with no timer in
+    -- between, which is what makes browsing the list feel immediate. Requests
+    -- the cursor has already moved past are discarded as they return, so the
+    -- cost of a fast scroll is extra `git cat-file` calls, not a backlog of
+    -- views. Raise it if that churn matters on a large repository.
+    preview_delay = 0,
   },
 
   --- Inline change signs in ordinary file buffers.

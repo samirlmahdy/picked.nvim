@@ -647,6 +647,10 @@ function Panel:install_autocmds()
       local closed = tonumber(args.match)
       if closed and closed == self.winid then
         self.winid = nil
+        -- `Panel:close` is not on this path, so the claim it would have
+        -- dropped has to be dropped here or 'winwidth' stays clamped for the
+        -- rest of the session.
+        winsize.release("panel:" .. self.spec.name)
         if self.spec.on_close then
           self.spec.on_close(self)
         end
@@ -696,12 +700,19 @@ function Panel:install_autocmds()
   end
 
   if self.spec.on_cursor then
-    local debounce = require("picked.utils.debounce")
-    local notify_cursor = debounce.trailing(function()
+    local function fire()
       if self:is_open() and self.spec.on_cursor then
         self.spec.on_cursor(self, self:item())
       end
-    end, config.options.diff.preview_delay)
+    end
+
+    -- A delay of 0 is not a 0ms timer: it means no timer at all, so the
+    -- preview is on its way before the cursor has finished settling.
+    local delay = config.options.diff.preview_delay
+    local notify_cursor = fire
+    if type(delay) == "number" and delay > 0 then
+      notify_cursor = require("picked.utils.debounce").trailing(fire, delay)
+    end
 
     vim.api.nvim_create_autocmd("CursorMoved", {
       group = self.augroup,
