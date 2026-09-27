@@ -909,6 +909,36 @@ end
 ---how the panes ended up narrower than the file window beside them.
 ---@param first integer
 ---@param second integer
+---Put the sidebar back to the width picked holds it at.
+---
+---Balancing divides what the two panes currently have between them, so
+---anything that takes columns off the pair is made permanent: the panes come
+---back equal but smaller, and every later balance divides the smaller total
+---again. The sidebar is the only other window picked manages and the only one
+---that can take from them once the editor area has been collapsed, so putting
+---it back is what lets the panes reclaim the space.
+---
+---`data.width`, not the configured width: a sidebar the user has deliberately
+---dragged wider should stay where they put it.
+local function reclaim_from_sidebar()
+  if config.options.diff.layout == "horizontal" or not config.options.diff.split_full_width then
+    return
+  end
+  local sidebar = panel_lib.get("source_control")
+  if not (sidebar and sidebar:is_open() and sidebar.spec.layout == "sidebar") then
+    return
+  end
+  local width = sidebar.data.width
+  if type(width) ~= "number" then
+    return
+  end
+  if vim.api.nvim_win_get_width(sidebar.winid) ~= width then
+    pcall(vim.api.nvim_win_set_width, sidebar.winid, width)
+  end
+end
+
+---@param first integer
+---@param second integer
 local function balance_split(first, second)
   if not (vim.api.nvim_win_is_valid(first) and vim.api.nvim_win_is_valid(second)) then
     return
@@ -916,6 +946,10 @@ local function balance_split(first, second)
   local horizontal = config.options.diff.layout == "horizontal"
   local get = horizontal and vim.api.nvim_win_get_height or vim.api.nvim_win_get_width
   local set = horizontal and vim.api.nvim_win_set_height or vim.api.nvim_win_set_width
+
+  -- Before measuring, or the panes divide a total that has already been
+  -- taken from them.
+  reclaim_from_sidebar()
 
   local total = get(first) + get(second)
   local half = math.floor(total / 2)

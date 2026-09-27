@@ -683,6 +683,77 @@ describe("views", function()
       require("picked.ui.source_control").close()
     end)
 
+    it("reclaims width the sidebar took, instead of dividing what is left", function()
+      -- Balancing splits whatever the two panes currently hold, so anything
+      -- that takes columns off the pair used to be made permanent: switching
+      -- files gave two equal but *smaller* panes, and every switch after that
+      -- divided the smaller total again.
+      local columns = vim.o.columns
+      vim.o.columns = 160
+
+      local dir = helper.init("view-reclaim")
+      for _, name in ipairs({ "a.lua", "b.lua" }) do
+        helper.write(dir, name, string.rep("line\n", 40))
+      end
+      helper.git(dir, { "add", "-A" })
+      helper.commit(dir, "base")
+      for _, name in ipairs({ "a.lua", "b.lua" }) do
+        helper.write(dir, name, string.rep("line\n", 20) .. "X " .. name .. "\n" .. string.rep("line\n", 19))
+      end
+      local repo = activate(dir)
+      sync(repo)
+
+      require("picked.ui.source_control").open()
+      t.wait_for(function()
+        return require("picked.ui.panel").get("source_control"):is_open()
+      end, "the sidebar never opened")
+      local sidebar = require("picked.ui.panel").get("source_control")
+
+      diff_view.open(repo, { path = "a.lua", spec = { kind = "worktree" }, view = "split" })
+      t.wait_for(function()
+        return diff_view.split_is_open()
+      end, "the split never opened")
+      vim.wait(250)
+
+      local function panes()
+        local widths = {}
+        for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+          if vim.wo[winid].diff then
+            widths[#widths + 1] = vim.api.nvim_win_get_width(winid)
+          end
+        end
+        return widths
+      end
+
+      local before = panes()
+      assert.equals(2, #before, "expected two panes to start with")
+
+      -- Stand in for whatever widens the sidebar in a real session — with a
+      -- UI attached, 'winwidth' does it on window entry.
+      vim.api.nvim_win_set_width(sidebar.winid, sidebar.data.width + 40)
+
+      t.with_options({ diff = { view = "split", preview = "auto" } }, function()
+        diff_view.preview(repo, { path = "b.lua" }, "worktree")
+        t.wait_for(function()
+          return diff_view.split_is_open() and vim.api.nvim_buf_get_name(0):find("b.lua", 1, true) ~= nil
+        end, "the preview never switched")
+        vim.wait(300)
+      end)
+
+      local after = panes()
+      assert.equals(2, #after, "expected two panes after the switch")
+      assert.is_true(math.abs(after[1] - after[2]) <= 1, ("panes differ: %d vs %d"):format(after[1], after[2]))
+      assert.equals(sidebar.data.width, vim.api.nvim_win_get_width(sidebar.winid), "the sidebar should be back")
+      assert.is_true(
+        after[1] >= before[1] - 1,
+        ("panes shrank from %d to %d across a file switch"):format(before[1], after[1])
+      )
+
+      diff_view.close_side_by_side()
+      require("picked.ui.source_control").close()
+      vim.o.columns = columns
+    end)
+
     it("takes its mappings back off the user's own buffer", function()
       -- The right-hand side of a worktree diff is the real file. `q` there is
       -- macro recording, so the mapping must not outlive the split.
