@@ -1,88 +1,34 @@
 # picked.nvim
 
 [![CI](https://github.com/samirlmahdy/picked.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/samirlmahdy/picked.nvim/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/samirlmahdy/picked.nvim?include_prereleases)](https://github.com/samirlmahdy/picked.nvim/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Pick exactly what goes into your next commit.**
+> **Pick exactly what goes into your next commit.**
 
-A complete Git workflow environment for Neovim, modelled on the VS Code Source
-Control experience but built entirely from Neovim primitives — buffers,
-windows, extmarks, signs, keymaps and async jobs.
+**picked.nvim** is a keyboard-first Git workspace for Neovim. Stage an entire
+file, one hunk, or exactly the lines you select—then commit, inspect history,
+resolve conflicts, and manage branches without leaving the editor.
 
-The name is the thesis: staging is an act of selection. picked stages by file,
-by hunk, or by individual line, and the patch it hands to `git apply` is exactly
-the one you chose.
+![Stage hunks and selected lines with picked.nvim](assets/02-stage-hunks-and-lines.gif)
 
-The goal is narrow and concrete:
+Built entirely from Neovim primitives: buffers, windows, extmarks, signs,
+keymaps, and asynchronous jobs. The core has no plugin dependencies.
 
-> You should never need to open VS Code, or leave Neovim for a terminal, just
-> to do something with Git.
+## Why picked?
 
-Keyboard-first, fully usable with a mouse, asynchronous throughout, and safe
-with destructive operations by default.
-
----
-
-## Features
-
-**Source Control panel**
-- Staged, unstaged, untracked and conflicted changes in one view
-- Collapsible directory tree, or a flat list
-- Stage, unstage and discard by file, directory, section or visual selection
-- Live branch, upstream ahead/behind, and in-progress operation state
-
-**Diffs**
-- Unified patch view with hunk and **line-level** staging
-- True side-by-side view using Neovim's own `:diffthis` — `<C-v>` toggles
-- `]c` / `[c` jump between hunks in **both** views
-- Every comparison names both sides — index ↔ working tree, HEAD ↔ index,
-  HEAD ↔ working tree, commit ↔ parent, branch ↔ branch
-- Inline change signs in ordinary file buffers, with hunk actions
-
-**History**
-- Paged commit log with a computed commit graph
-- Commit details: metadata, message, changed files with line counts
-- File history (following renames) and line history
-- Blame view bound to the file in both directions, with the current line and
-  its whole commit block highlighted in both panes and a colour per commit
-
-**Operations**
-- Commit in a real `gitcommit` buffer, amend, commit & push, with optional
-  GitHub Copilot CLI message suggestions
-- Push, pull (merge / rebase / ff-only), fetch, prune
-- Branch create, switch, rename, delete, merge, rebase, set upstream
-- Stash push/apply/pop/drop/branch
-- Cherry-pick, revert, reset, tag
-- Merge conflict resolution with ours/theirs/both/base, and a three-way view
-- Continue, skip or abort any in-progress merge, rebase, cherry-pick or revert
-- Open the repository, a file, a line range or a commit on GitHub, GitLab,
-  Bitbucket, Gitea, SourceHut or a self-hosted forge
-
-**Everything else**
-- Command palette, contextual menus, generated help
-- Responsive from 80 to 200+ columns
-- Multi-repository and worktree aware
-- Statusline API with no plugin dependency
-- No hard dependencies beyond Neovim and git
-
----
-
-## Requirements
-
-- Neovim **0.10+** (uses `vim.system`, `vim.uv`, extmark signs)
-- git **2.20+** (2.23+ recommended, for `git switch`/`restore`)
-
-Nerd fonts are optional. picked probes for glyph support and falls back to ASCII
-automatically; the UI is designed to be readable either way, and never
-communicates state with colour alone.
-
-GitHub Copilot CLI is optional and is only needed for AI commit-message
-suggestions. Keep it current — `npm i -g @github/copilot@latest`. An old CLI
-asks for models the API no longer serves, and rather than failing it retries
-the rejected call forever; picked spots that and stops waiting, but only the
-update actually fixes it.
-
----
+- **Stage precisely.** Work by repository, directory, file, hunk, or visual
+  line selection.
+- **See the real comparison.** Unified and native `:diffthis` views clearly
+  label HEAD, index, working tree, commits, and branches.
+- **Keep one workflow.** Status, commits, history, blame, branches, stashes,
+  remotes, conflicts, and sequencer operations share one interface.
+- **Stay responsive.** Git commands run asynchronously, with stale results
+  discarded when newer repository state arrives.
+- **Use safe defaults.** Destructive actions explain and confirm what will be
+  lost; force-push uses `--force-with-lease`.
+- **Generate commit messages when you want.** GitHub Copilot CLI support is
+  optional, explicit, and always leaves the result editable.
 
 ## Installation
 
@@ -100,6 +46,9 @@ update actually fixes it.
   opts = {},
 }
 ```
+
+<details>
+<summary>Other plugin managers</summary>
 
 ### packer.nvim
 
@@ -119,26 +68,83 @@ Plug 'samirlmahdy/picked.nvim'
 lua require('picked').setup({})
 ```
 
-`setup()` is optional — the commands self-initialise — but calling it is how you
-change any of the configuration below.
+</details>
 
----
+`setup()` is optional—the commands self-initialise. Call it to change defaults.
 
 ## Quick start
 
-1. Open a file inside a repository.
-2. `<leader>gs` opens the Source Control panel.
-3. `j`/`k` to move. **Selecting a file shows its diff** — added and removed
-   lines with `+`/`-`, in green and red — while the cursor stays in the list.
-4. `s` stages, `u` unstages, `x` discards. In the diff, `s` stages one hunk,
-   or exactly the lines you select in visual mode.
-5. `c` opens the commit editor; write a message, or press `<C-g>` to ask the
-   optional GitHub Copilot CLI for an editable suggestion. Press `<C-s>` (or
-   `:w`) to commit.
-6. `p` pushes. `?` shows every key, generated from *your* configuration.
+1. Open Neovim anywhere inside a Git repository.
+2. Press `<leader>guu` to open Source Control.
+3. Move with `j` / `k`; selecting a file previews its diff automatically.
+4. Press `s` to stage, `u` to unstage, or `x` to discard. Inside a diff,
+   visually select lines and press `s` to stage exactly that selection.
+5. Press `c` to commit. Write the message yourself or press `<C-g>` for an
+   editable Copilot suggestion, then `<C-s>` or `:w` to commit.
+6. Press `p` to push and `?` at any time for contextual help generated from
+   your configuration.
 
-If you would rather browse the list without diffs opening, set
-`diff = { preview = false }` and use `d` on demand.
+Set `diff = { preview = false }` if you prefer opening previews explicitly
+with `d`.
+
+## See it in action
+
+### Generate a commit message with GitHub Copilot
+
+Press `<C-g>` in the commit editor. picked sends the staged diff to GitHub
+Copilot CLI and inserts the returned message for review—it never commits on
+your behalf. The Copilot process is denied shell, filesystem, and web tools; it
+can only return text.
+
+![Generate an editable commit message with GitHub Copilot](assets/04-copilot-commit-message.gif)
+
+Copilot is optional. Install or update its CLI separately:
+
+```bash
+npm install -g @github/copilot@latest
+```
+
+### Resolve merge conflicts
+
+Keep ours, theirs, both, the merge base, or neither for each conflict. Navigate
+regions, stage resolved files, and continue or abort the operation from the
+same interface.
+
+![Resolve merge conflicts with picked.nvim](assets/01-resolve-merge-conflicts.gif)
+
+### Follow history and blame
+
+Browse the commit graph, file and line history, and a blame view synchronized
+with the source file. The selected line's whole commit block is highlighted in
+both panes.
+
+![Browse history and blame with picked.nvim](assets/03-history-and-blame.gif)
+
+## Feature overview
+
+| Area | Included |
+| --- | --- |
+| Source Control | Staged, unstaged, untracked, and conflicted files; tree or flat layout; multi-selection actions |
+| Diffs | Unified and native side-by-side views; hunk navigation; file, hunk, and selected-line staging |
+| History | Commit graph and details, file history across renames, line history, synchronized blame |
+| Commits | Real `gitcommit` buffer, amend, commit and push, signing inheritance, optional Copilot suggestions |
+| Branches and remotes | Create, switch, rename, delete, merge, rebase, upstreams, push, pull, fetch, and prune |
+| Stashes | Push, list, inspect, apply, pop, drop, and branch |
+| Recovery and sequencing | Resolve conflicts; continue, skip, or abort merges, rebases, cherry-picks, and reverts |
+| Hosting | Open repositories, files, ranges, and commits on GitHub, GitLab, Bitbucket, Gitea, SourceHut, or self-hosted forges |
+| Editor integration | Change signs, command palette, contextual menus, mouse support, statusline API, Telescope, Snacks, fzf-lua, and which-key |
+
+## Requirements
+
+- Neovim **0.10+** (`0.10.4`, current stable, and nightly are tested in CI)
+- Git **2.20+** (`2.23+` recommended for `git switch` / `git restore`)
+
+Nerd Fonts are optional. picked detects glyph support and falls back to ASCII;
+state is never communicated by colour alone.
+
+GitHub Copilot CLI is optional and only required for generated commit
+messages. Keep it current: old CLI versions may request models the API no
+longer serves.
 
 ---
 
