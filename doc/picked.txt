@@ -364,7 +364,10 @@ CONFLICTS                                             *picked-keymaps-conflict*
 
 COMMIT EDITOR                                           *picked-keymaps-commit*
 
-  <C-g>         Suggest an editable message with GitHub Copilot CLI
+  <C-g>         Suggest an editable message with GitHub Copilot CLI. The hint
+                beside the key spins while Copilot is thinking, and the same
+                progress is published for |picked.statusline()|. The wording
+                changes too, so the state is not carried by motion alone.
   <C-CR> <C-s>  Commit. `:w` also works and is immune to terminal flow control.
   <C-p>         Commit and push
   <C-a>         Toggle amend

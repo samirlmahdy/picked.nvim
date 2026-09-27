@@ -34,6 +34,8 @@ local M = {}
 ---@field paths string[]|nil
 ---@field closing boolean
 ---@field suggesting boolean
+---@field spinner_frame string|nil  current frame, while a suggestion is running
+---@field spinner_timer uv.uv_timer_t|nil  stopped and closed with the session
 
 ---@type PickedCommitSession|nil
 local session = nil
@@ -171,14 +173,77 @@ local function render_info(current)
   canvas:row(nil):add(first(keys.submit_push) or "<C-p>", "PickedKey"):add("  commit and push", "PickedHint")
   canvas:row(nil):add(first(keys.amend) or "<C-a>", "PickedKey"):add("  toggle amend", "PickedHint")
   if config.options.commit.copilot then
-    canvas
-      :row(nil)
-      :add(first(keys.suggest) or "<C-g>", "PickedKey")
-      :add(current.suggesting and "  asking Copilot…" or "  suggest message", "PickedHint")
+    local row = canvas:row(nil):add(first(keys.suggest) or "<C-g>", "PickedKey")
+    if current.suggesting then
+      -- The frame is its own highlight so the motion reads as progress rather
+      -- than as part of the sentence. The words carry the meaning either way,
+      -- for anyone the animation does not reach.
+      row
+        :add("  ")
+        :add(current.spinner_frame or icons.set.spinner[1], "PickedProgress")
+        :add(" asking Copilot…", "PickedHint")
+    else
+      row:add("  suggest message", "PickedHint")
+    end
   end
   canvas:row(nil):add(first(keys.cancel) or "<C-c>", "PickedKey"):add("  cancel", "PickedHint")
 
   canvas:apply(current.info_bufnr, vim.api.nvim_create_namespace("picked_commit_info"))
+end
+
+--- Suggestion spinner ---------------------------------------------------------
+
+---Stop animating, whether the suggestion arrived, failed, or the editor went
+---away underneath it. Safe to call more than once: a leaked libuv timer keeps
+---firing at a dead session for the rest of the Neovim run.
+---@param current table
+local function stop_spinner(current)
+  current.suggesting = false
+  current.spinner_frame = nil
+  if current.spinner_timer then
+    current.spinner_timer:stop()
+    if not current.spinner_timer:is_closing() then
+      current.spinner_timer:close()
+    end
+    current.spinner_timer = nil
+  end
+end
+
+---Animate the suggestion hint while Copilot is thinking.
+---
+---Frames come from the icon set, so a terminal without the braille glyphs
+---turns the same animation into `|/-\` rather than a row of boxes. The hint
+---text stays beside it: the spinner says "still working", the words say what
+---is being worked on.
+---@param current table
+local function start_spinner(current)
+  stop_spinner(current)
+  current.suggesting = true
+
+  local frames = icons.set.spinner
+  local index = 1
+  current.spinner_frame = frames[index]
+  render_info(current)
+
+  local timer = vim.uv.new_timer()
+  if not timer then
+    -- No timer available: the static hint still says what is happening.
+    return
+  end
+  current.spinner_timer = timer
+  timer:start(
+    80,
+    80,
+    vim.schedule_wrap(function()
+      -- The session can be replaced or closed between ticks.
+      if session ~= current or not current.suggesting then
+        return stop_spinner(current)
+      end
+      index = index % #frames + 1
+      current.spinner_frame = frames[index]
+      render_info(current)
+    end)
+  )
 end
 
 --- Session -----------------------------------------------------------------------
@@ -190,6 +255,7 @@ local function close_session(keep_draft)
   end
   current.closing = true
   session = nil
+  stop_spinner(current)
 
   -- Preserve an unfinished message so reopening does not lose typing.
   if keep_draft and vim.api.nvim_buf_is_valid(current.bufnr) then
@@ -500,22 +566,29 @@ function M.suggest()
     return
   end
 
-  current.suggesting = true
-  render_info(current)
-  notify.info("Asking GitHub Copilot for a commit message…")
+  start_spinner(current)
+
+  -- A progress handle as well as the spinner in the panel: the commit editor
+  -- is not always the window being looked at, and this is what puts the same
+  -- animation in a statusline.
+  local progress = notify.progress("Asking Copilot", { root = current.repo.root, key = "copilot_suggest" })
 
   require("picked.integrations.copilot").suggest(current.repo, {
     paths = current.paths,
     max_diff = config.options.commit.copilot_max_diff,
     timeout = config.options.commit.copilot_timeout,
   }, function(message, err)
+    -- Finish the handle before anything can return early, or the statusline
+    -- spins for the rest of the session over an operation that has ended.
+    stop_spinner(current)
+
     if session ~= current or not vim.api.nvim_buf_is_valid(current.bufnr) then
+      progress:finish(false, nil, err)
       return
     end
-    current.suggesting = false
     render_info(current)
     if err then
-      notify.error(err)
+      progress:finish(false, nil, err)
       return
     end
 
@@ -527,7 +600,7 @@ function M.suggest()
       vim.api.nvim_set_current_win(current.winid)
       pcall(vim.api.nvim_win_set_cursor, current.winid, { 1, #(lines[1] or "") })
     end
-    notify.info("Copilot suggestion inserted — edit it or undo to restore your draft")
+    progress:finish(true, "Copilot suggestion inserted — edit it or undo to restore your draft")
   end)
 end
 
