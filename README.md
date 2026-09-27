@@ -1,5 +1,8 @@
 # picked.nvim
 
+[![CI](https://github.com/samirlmahdy/picked.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/samirlmahdy/picked.nvim/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Pick exactly what goes into your next commit.**
 
 A complete Git workflow environment for Neovim, modelled on the VS Code Source
