@@ -992,8 +992,6 @@ function M.open_side_by_side(repo, path, spec, opts)
         map_split_buffer(right_bufnr, context)
       end
 
-
-
       -- Land on the right-hand (newer, editable) side, at the first change.
       vim.api.nvim_set_current_win(right_winid)
       pcall(vim.cmd, "normal! gg")
