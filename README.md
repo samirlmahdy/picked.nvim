@@ -77,7 +77,10 @@ automatically; the UI is designed to be readable either way, and never
 communicates state with colour alone.
 
 GitHub Copilot CLI is optional and is only needed for AI commit-message
-suggestions.
+suggestions. Keep it current — `npm i -g @github/copilot@latest`. An old CLI
+asks for models the API no longer serves, and rather than failing it retries
+the rejected call forever; picked spots that and stops waiting, but only the
+update actually fixes it.
 
 ---
 
